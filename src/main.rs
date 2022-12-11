@@ -6,11 +6,11 @@ use serenity::framework::standard::StandardFramework;
 use serenity::framework::standard::macros::group;
 
 mod commands;
-use commands::pins::*;
+use commands::{pins::*, events::*, faqs::*, list::*};
 
 #[group]
-#[commands(pins)]
-pub struct PinsGeneral;
+#[commands(pins, events, faqs, list)]
+pub struct General;
 
 struct Handler;
 
@@ -21,10 +21,10 @@ impl EventHandler for Handler {}
 async fn main() {
     let framework = StandardFramework::new()
         .configure(|c| c.prefix("_")) // set the bot's prefix to "_"
-        .group(&PINSGENERAL_GROUP);
+        .group(&GENERAL_GROUP);
 
     // Login with a bot token from the environment
-    let token = env::var("DISCORD_TOKEN").expect("token");
+    let token = env::var("DISCORD_TOKEN").expect("Unable to retrieve DISCORD_TOKEN environment variable!");
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
     let mut client = Client::builder(token, intents)
         .event_handler(Handler)
