@@ -94,15 +94,9 @@ async fn faqs(ctx: &Context, msg: &Message) -> CommandResult {
 #[description = "Create new FAQ."]
 #[usage = "\"Question\" \"Answer\""]
 async fn add_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
-        return Ok(());
-    } else if args.len() != 2 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `add_faq` command requires 2 arguments: Question and Answer\n\nSee `.help add_faq`  for more usage details.")
-            .await;
+    let arg_names = vec!("Question", "Answer");
+    if !validation::has_corkboard_role(ctx, msg).await
+        || !validation::has_correct_arg_count(ctx, msg, 2, args.len(), arg_names, "add_faq").await {
         return Ok(());
     }
 
@@ -114,17 +108,11 @@ async fn add_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description = "Edit an existing FAQ."]
 #[usage = "FAQ_id \"Question\" \"Answer\""]
 async fn edit_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
+    let arg_names = vec!("FAQ_id", "Question", "Answer");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 3, args.len(), arg_names, "edit_faq").await {
         return Ok(());
-    } else if args.len() != 2 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `edit_faq` command requires 3 arguments: FAQ_id, Question, and Answer\n\nSee `.help edit_faq`  for more usage details.")
-            .await;
-        return Ok(());
-    }
+    } 
 
     Ok(())
 }
@@ -134,17 +122,11 @@ async fn edit_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description = "Delete a FAQ."]
 #[usage = "FAQ_id"]
 async fn delete_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
+    let arg_names = vec!("FAQ_id");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 1, args.len(), arg_names, "delete_faq").await {
         return Ok(());
-    } else if args.len() != 1 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `delete_faq` command requires 1 argument: FAQ_id\n\nSee `.help delete_faq` for more usage details.")
-            .await;
-        return Ok(());
-    }
+    } 
 
     Ok(())
 }

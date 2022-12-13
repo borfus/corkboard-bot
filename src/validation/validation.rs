@@ -11,6 +11,12 @@ pub async fn has_corkboard_role(ctx: &Context, msg: &Message) -> bool {
             if msg.author.has_role(&ctx.http, guild_id, role.id).await.unwrap() {
                 return true;
             } else {
+                let _msg = msg
+                    .channel_id.say(
+                        &ctx.http,
+                        ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command."
+                    )
+                    .await;
                 return false;
             }
         }
@@ -19,3 +25,31 @@ pub async fn has_corkboard_role(ctx: &Context, msg: &Message) -> bool {
     false
 }
 
+pub async fn has_correct_arg_count(
+    ctx: &Context,
+    msg: &Message,
+    expected: usize,
+    actual: usize,
+    args: Vec<&str>,
+    command_name: &str
+) -> bool {
+    if expected != actual {
+        let _msg = msg
+            .channel_id.say(
+                &ctx.http,
+                format!(
+                    ":bangbang: Error :bangbang: - the `{}` command requires {} arguments:\n\n\t\t{:?}
+                    \nSee `.help {}`  for more usage details.",
+                    command_name,
+                    expected,
+                    args,
+                    command_name
+                )
+            )
+            .await;
+
+        return false;
+    }
+
+    true
+}

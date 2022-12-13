@@ -93,17 +93,11 @@ async fn pins(ctx: &Context, msg: &Message) -> CommandResult {
 #[description = "Add a Pin."]
 #[usage = "title url description"]
 async fn add_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
+    let arg_names = vec!("Title", "URL", "Description");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 3, args.len(), arg_names, "add_pin").await {
         return Ok(());
-    } else if args.len() != 3 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `add_pin` command requires 3 arguments: Title, URL, and Description\n\nSee `.help add_pin` for more usage details.")
-            .await;
-        return Ok(());
-    }
+    } 
 
     Ok(())
 }
@@ -113,17 +107,11 @@ async fn add_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description = "Edit a Pin."]
 #[usage = "pin_id title url description"]
 async fn edit_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
+    let arg_names = vec!("Pin_id", "Title", "URL", "Description");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 4, args.len(), arg_names, "edit_pin").await {
         return Ok(());
-    } else if args.len() != 4 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `edit_pin` command requires 4 arguments: pin_id, Title, URL, and Description\n\nSee `.help edit_pin` for more usage details.")
-            .await;
-        return Ok(());
-    }
+    } 
 
     Ok(())
 }
@@ -133,17 +121,11 @@ async fn edit_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description = "Add a Pin."]
 #[usage = "pin_id"]
 async fn delete_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
+    let arg_names = vec!("Pin_id");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 1, args.len(), arg_names, "delete_pin").await {
         return Ok(());
-    } else if args.len() != 1 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `delete_pin` command requires 1 argument: pin_id\n\nSee `.help delete_pin` for more usage details.")
-            .await;
-        return Ok(());
-    }
+    } 
 
     Ok(())
 }

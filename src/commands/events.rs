@@ -110,15 +110,9 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
 #[description = "Add an Event."]
 #[usage = "title url description start_date end_date"]
 async fn add_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
-        return Ok(());
-    } else if args.len() != 5 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `add_event` command requires 5 arguments: Title, URL, Description, Start Date, and End Date\n\nSee `.help add_event` for more usage details.")
-            .await;
+    let arg_names = vec!("Title", "URL", "Description", "Start Date", "End Date");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 5, args.len(), arg_names, "add_event").await {
         return Ok(());
     }
 
@@ -130,17 +124,11 @@ async fn add_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description = "Edit an Event."]
 #[usage = "event_id title url description start_date end_date"]
 async fn edit_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
+    let arg_names = vec!("Event_id", "Title", "URL", "Description", "Start Date", "End Date");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 6, args.len(), arg_names, "edit_event").await {
         return Ok(());
-    } else if args.len() != 6 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `edit_event` command requires 6 arguments: event_id, Title, URL, Description, Start Date, End Date\n\nSee `.help edit_event` for more usage details.")
-            .await;
-        return Ok(());
-    }
+    } 
 
     Ok(())
 }
@@ -150,15 +138,9 @@ async fn edit_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description = "Delete an Event."]
 #[usage = "event_id"]
 async fn delete_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if !validation::has_corkboard_role(ctx, msg).await {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
-            .await;
-        return Ok(());
-    } else if args.len() != 1 {
-        let _msg = msg
-            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `delete_event` command requires 1 argument: event_id\n\nSee `.help delete_event` for more usage details.")
-            .await;
+    let arg_names = vec!("Event_id");
+    if !validation::has_corkboard_role(ctx, msg).await 
+        || !validation::has_correct_arg_count(ctx, msg, 1, args.len(), arg_names, "delete_event").await {
         return Ok(());
     }
 
