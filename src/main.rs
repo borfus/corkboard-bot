@@ -11,9 +11,15 @@ use serenity::model::id::UserId;
 mod commands;
 use commands::{pins::*, events::*, faqs::*, list::*, luckymon::*};
 
+mod validation;
+
 #[group]
 #[commands(pins, events, faqs, list, luckymon)]
 pub struct General;
+
+#[group]
+#[commands(add_faq, edit_faq, delete_faq, add_event, edit_event, delete_event, add_pin, edit_pin, delete_pin)]
+pub struct Admin;
 
 struct Handler;
 
@@ -25,6 +31,7 @@ async fn main() {
     let framework = StandardFramework::new()
         .configure(|c| c.prefix(".")) // set the bot's prefix to "."
         .group(&GENERAL_GROUP)
+        .group(&ADMIN_GROUP)
         .help(&HELP);
 
     // Login with a bot token from the environment
@@ -50,9 +57,10 @@ async fn main() {
 #[command_not_found_text = "Could not find: `{}`."]
 #[max_levenshtein_distance(3)]
 #[indention_prefix = "+"]
-#[lacking_permissions = "Hide"]
-#[lacking_role = "Hide"]
-#[wrong_channel = "Hide"]
+#[lacking_permissions = "Nothing"]
+#[wrong_channel = "Nothing"]
+#[lacking_conditions = "Nothing"]
+#[lacking_role = "Nothing"]
 async fn help(
     context: &Context,
     msg: &Message,

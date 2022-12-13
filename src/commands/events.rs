@@ -6,11 +6,13 @@ use std::collections::HashMap;
 use serenity::prelude::*;
 use serenity::model::channel::Message;
 use serenity::framework::standard::macros::command;
-use serenity::framework::standard::CommandResult;
+use serenity::framework::standard::{CommandResult, Args};
 use serenity::model::Timestamp;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use chrono::NaiveDateTime;
+
+use crate::validation::validation;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Event {
@@ -100,6 +102,66 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
         .await;
 
     println!("Finished processing events command!");
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Add an Event."]
+#[usage = "title url description start_date end_date"]
+async fn add_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 5 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `add_event` command requires 5 arguments: Title, URL, Description, Start Date, and End Date\n\nSee `.help add_event` for more usage details.")
+            .await;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Edit an Event."]
+#[usage = "event_id title url description start_date end_date"]
+async fn edit_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 6 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `edit_event` command requires 6 arguments: event_id, Title, URL, Description, Start Date, End Date\n\nSee `.help edit_event` for more usage details.")
+            .await;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Delete an Event."]
+#[usage = "event_id"]
+async fn delete_event(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 1 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `delete_event` command requires 1 argument: event_id\n\nSee `.help delete_event` for more usage details.")
+            .await;
+        return Ok(());
+    }
+
     Ok(())
 }
 

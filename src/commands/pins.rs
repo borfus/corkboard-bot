@@ -6,11 +6,13 @@ use std::collections::HashMap;
 use serenity::prelude::*;
 use serenity::model::channel::Message;
 use serenity::framework::standard::macros::command;
-use serenity::framework::standard::CommandResult;
+use serenity::framework::standard::{CommandResult, Args};
 use serenity::model::Timestamp;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use chrono::NaiveDateTime;
+
+use crate::validation::validation;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Pin {
@@ -83,6 +85,66 @@ async fn pins(ctx: &Context, msg: &Message) -> CommandResult {
         .await;
 
     println!("Finished processing pins command!");
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Add a Pin."]
+#[usage = "title url description"]
+async fn add_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 3 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `add_pin` command requires 3 arguments: Title, URL, and Description\n\nSee `.help add_pin` for more usage details.")
+            .await;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Edit a Pin."]
+#[usage = "pin_id title url description"]
+async fn edit_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 4 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `edit_pin` command requires 4 arguments: pin_id, Title, URL, and Description\n\nSee `.help edit_pin` for more usage details.")
+            .await;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Add a Pin."]
+#[usage = "pin_id"]
+async fn delete_pin(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 1 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `delete_pin` command requires 1 argument: pin_id\n\nSee `.help delete_pin` for more usage details.")
+            .await;
+        return Ok(());
+    }
+
     Ok(())
 }
 

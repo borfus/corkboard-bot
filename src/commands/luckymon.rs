@@ -75,7 +75,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("You lucky pokemon of the day is:")
+                e.title("Your lucky pokemon of the day is:")
                     .image(sprite)
                     .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", regular_name).to_string(), false)))
                     .timestamp(Timestamp::now())

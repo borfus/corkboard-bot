@@ -6,16 +6,24 @@ use std::collections::HashMap;
 use serenity::prelude::*;
 use serenity::model::channel::Message;
 use serenity::framework::standard::macros::command;
-use serenity::framework::standard::CommandResult;
+use serenity::framework::standard::{CommandResult, Args};
 use serenity::model::Timestamp;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use chrono::NaiveDateTime;
 
+use crate::validation::validation;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Faq {
     pub id: Uuid,
     pub last_modified_date: NaiveDateTime,
+    pub question: String,
+    pub answer: String
+}
+
+#[derive(Serialize, Debug)]
+pub struct NewFaq {
     pub question: String,
     pub answer: String
 }
@@ -78,6 +86,66 @@ async fn faqs(ctx: &Context, msg: &Message) -> CommandResult {
         .await;
 
     println!("Finished processing FAQs command!");
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Create new FAQ."]
+#[usage = "\"Question\" \"Answer\""]
+async fn add_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 2 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `add_faq` command requires 2 arguments: Question and Answer\n\nSee `.help add_faq`  for more usage details.")
+            .await;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Edit an existing FAQ."]
+#[usage = "FAQ_id \"Question\" \"Answer\""]
+async fn edit_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 2 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `edit_faq` command requires 3 arguments: FAQ_id, Question, and Answer\n\nSee `.help edit_faq`  for more usage details.")
+            .await;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("corkboard")]
+#[description = "Delete a FAQ."]
+#[usage = "FAQ_id"]
+async fn delete_faq(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    if !validation::has_corkboard_role(ctx, msg).await {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command.")
+            .await;
+        return Ok(());
+    } else if args.len() != 1 {
+        let _msg = msg
+            .channel_id.say(&ctx.http, ":bangbang: Error :bangbang: - the `delete_faq` command requires 1 argument: FAQ_id\n\nSee `.help delete_faq` for more usage details.")
+            .await;
+        return Ok(());
+    }
+
     Ok(())
 }
 
