@@ -27,7 +27,6 @@ impl Faq {
         answer: String
     ) -> Self {
         let id = Uuid::parse_str(id).expect("Bad UUID");
-
         Faq {id, question, answer}
     }
 
@@ -147,12 +146,10 @@ async fn edit_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         return Ok(());
     } 
 
-    args.quoted();
     let id = args.current().unwrap().to_string();
     args.advance();
-    let question = args.current().unwrap().to_string();
-    args.advance();
-    let answer = args.current().unwrap().to_string();
+    let question = args.single_quoted::<String>().unwrap().to_string();
+    let answer = args.single_quoted::<String>().unwrap().to_string();
 
     let id_int = match id.parse::<i32>() {
         Ok(i) => i,
