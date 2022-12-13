@@ -102,10 +102,8 @@ async fn add_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         return Ok(());
     }
 
-    args.quoted();
-    let question = args.current().unwrap().to_string();
-    args.advance();
-    let answer = args.current().unwrap().to_string();
+    let question = args.single_quoted::<String>().unwrap();
+    let answer = args.single_quoted::<String>().unwrap();
     let new = NewFaq::new(question, answer);
 
     println!("Sending new FAQ creation request with {:?}", new);
@@ -148,8 +146,8 @@ async fn edit_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     let id = args.current().unwrap().to_string();
     args.advance();
-    let question = args.single_quoted::<String>().unwrap().to_string();
-    let answer = args.single_quoted::<String>().unwrap().to_string();
+    let question = args.single_quoted::<String>().unwrap();
+    let answer = args.single_quoted::<String>().unwrap();
 
     let id_int = match id.parse::<i32>() {
         Ok(i) => i,

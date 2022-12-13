@@ -107,12 +107,9 @@ async fn add_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         return Ok(());
     } 
 
-    args.quoted();
-    let title = args.current().unwrap().to_string();
-    args.advance();
-    let url = args.current().unwrap().to_string();
-    args.advance();
-    let description = args.current().unwrap().to_string();
+    let title = args.single_quoted::<String>().unwrap();
+    let url = args.single_quoted::<String>().unwrap();
+    let description = args.single_quoted::<String>().unwrap();
     let new = NewPin::new(title, url, description);
 
     println!("Sending new Pin creation request with {:?}", new);
@@ -156,9 +153,9 @@ async fn edit_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 
     let id = args.current().unwrap().to_string();
     args.advance();
-    let title = args.single_quoted::<String>().unwrap().to_string();
-    let url = args.single_quoted::<String>().unwrap().to_string();
-    let description = args.single_quoted::<String>().unwrap().to_string();
+    let title = args.single_quoted::<String>().unwrap();
+    let url = args.single_quoted::<String>().unwrap();
+    let description = args.single_quoted::<String>().unwrap();
 
     let id_int = match id.parse::<i32>() {
         Ok(i) => i,
