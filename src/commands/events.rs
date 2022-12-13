@@ -25,6 +25,15 @@ pub struct Event {
     pub end_date: NaiveDateTime
 }
 
+#[derive(Serialize, Debug)]
+pub struct NewEvent {
+    pub description: String,
+    pub title: String,
+    pub url: String,
+    pub start_date: NaiveDateTime,
+    pub end_date: NaiveDateTime
+}
+
 impl Event {
     pub fn new(
         id: &str,

@@ -23,6 +23,13 @@ pub struct Pin {
     pub url: String
 }
 
+#[derive(Serialize, Debug)]
+pub struct NewPin {
+    pub description: String,
+    pub title: String,
+    pub url: String
+}
+
 impl Pin {
     pub fn new(
         id: &str,
