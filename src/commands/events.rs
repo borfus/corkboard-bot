@@ -104,7 +104,7 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
     let mut event_fields: Vec<(String, String, bool)> = Vec::new();
     let mut i = 1;
     for event in events {
-        event_fields.push((format!("{}.", i), format!("[{}]({}): {}\nStart: {}\n  End: {}", event.title, event.url, event.description, event.start_date, event.end_date), false));
+        event_fields.push((format!("{}.", i), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", event.title, event.url, event.description, event.start_date, event.end_date), false));
         i += 1;
     }
 
@@ -167,7 +167,7 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
             m.embed(|e| {
                 e.title("Created New Event")
                     .image("attachment://cork-board.png")
-                    .field(format!("1. "), format!("[{}]({}): {}\nStart: {}\n  End: {}", title, url, description, start_date, end_date), false)
+                    .field(format!("1. "), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", title, url, description, start_date, end_date), false)
                     .timestamp(Timestamp::now())
             })
             .add_file("./resources/cork-board.png")
@@ -246,7 +246,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             m.embed(|e| {
                 e.title("Edited Event")
                     .image("attachment://cork-board.png")
-                    .field(format!("1. "), format!("[{}]({}): {}\nStart: {}\n  End: {}", title, url, description, start_date, end_date), false)
+                    .field(format!("1. "), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", title, url, description, start_date, end_date), false)
                     .timestamp(Timestamp::now())
             })
             .add_file("./resources/cork-board.png")
@@ -316,7 +316,7 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
             m.embed(|e| {
                 e.title("Edited Event")
                     .image("attachment://cork-board.png")
-                    .field(format!("1. "), format!("[{}]({}): {}\nStart: {}\n  End: {}", title, url, description, start_date, end_date), false)
+                    .field(format!("1. "), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", title, url, description, start_date, end_date), false)
                     .timestamp(Timestamp::now())
             })
             .add_file("./resources/cork-board.png")
