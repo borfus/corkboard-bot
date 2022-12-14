@@ -21,8 +21,11 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
 
     let mut all_fields = Vec::new();
     all_fields.push(get_events().await?);
+    println!("Got events..");
     all_fields.push(get_pins().await?);
+    println!("Got pins..");
     all_fields.push(get_faqs().await?);
+    println!("Got faqs..");
 
     let _msg = msg
         .channel_id
@@ -49,6 +52,10 @@ async fn get_pins() -> Result<(String, String, bool), Box<dyn Error + Send + Syn
     let mut pins: Vec<Pin> = Vec::new();
     for pin_map in resp {
         pins.push(Pin::to_pin(pin_map));
+    }
+
+    if pins.len() == 0 {
+        return Ok(("Pins: ".to_string(), "No current pins found!".to_string(), false));
     }
 
     let mut pin_descriptions = String::new();
@@ -90,6 +97,10 @@ async fn get_faqs() -> Result<(String, String, bool), Box<dyn Error + Send + Syn
     let mut faqs: Vec<Faq> = Vec::new();
     for faq_map in resp {
         faqs.push(Faq::to_faq(faq_map));
+    }
+
+    if faqs.len() == 0 {
+        return Ok(("FAQs: ".to_string(), "No current FAQs found!".to_string(), false));
     }
 
     let mut faq_strings = String::new();

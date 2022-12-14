@@ -74,9 +74,13 @@ async fn pins(ctx: &Context, msg: &Message) -> CommandResult {
 
     let mut pin_fields: Vec<(String, String, bool)> = Vec::new();
     let mut i = 1;
-    for pin in pins {
-        pin_fields.push((format!("{}.", i), format!("[{}]({}): {}", pin.title, pin.url, pin.description), false));
-        i += 1;
+    if pins.len() == 0 {
+        pin_fields.push(("Pins: ".to_string(), "No current pins found!".to_string(), false));
+    } else {
+        for pin in pins {
+            pin_fields.push((format!("{}.", i), format!("[{}]({}): {}", pin.title, pin.url, pin.description), false));
+            i += 1;
+        }
     }
 
     let _msg = msg

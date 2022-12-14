@@ -57,9 +57,12 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     } else {
         write_daily_entry(ctx, user_id, lucky_num, is_shiny).await;
     }
+    println!("User ID {} ran luckymon command!: Got number {} and shiny {}", user_id, daily_pair.0, daily_pair.1);
+    let today = Timestamp::now().date_naive();
+    println!("Luckymon daily_pair: {} - {} - {:?}", daily_pair.0, daily_pair.1, today);
 
     let rustemon_client = RustemonClient::default();
-    let lucky_pokemon: Pokemon = pokemon::get_by_id(lucky_num, &rustemon_client).await?;
+    let lucky_pokemon: Pokemon = pokemon::get_by_id(daily_pair.0, &rustemon_client).await?;
 
     let regular_name = lucky_pokemon.name[0..1].to_uppercase() + &lucky_pokemon.name[1..];
     let mut final_name = String::from(&regular_name);

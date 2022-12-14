@@ -69,9 +69,13 @@ async fn faqs(ctx: &Context, msg: &Message) -> CommandResult {
 
     let mut faq_fields: Vec<(String, String, bool)> = Vec::new();
     let mut i = 1;
-    for faq in faqs {
-        faq_fields.push((format!("{}. {}", i, faq.question), faq.answer, false));
-        i += 1;
+    if faqs.len() == 0 {
+        faq_fields.push(("FAQs: ".to_string(), "No current FAQs found!".to_string(), false));
+    } else {
+        for faq in faqs {
+            faq_fields.push((format!("{}. {}", i, faq.question), faq.answer, false));
+            i += 1;
+        }
     }
 
     let _msg = msg
