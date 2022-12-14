@@ -73,7 +73,7 @@ impl NewEvent {
         start_date: &str,
         end_date: &str
     ) -> Self {
-        let fmt = "%m/%d/%Y %H:%M";
+        let fmt = "%m/%d/%Y %-I:%M%p";
         let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
             .expect("Unable to parse start_date NaiveDateTime for Event.");
         let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
@@ -84,7 +84,7 @@ impl NewEvent {
 }
 
 #[command]
-#[description = "Retrieves all events."]
+#[description = "Retrieves all events. All times using PST/PDT."]
 async fn events(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got events command..");
     let resp = reqwest::get("http://localhost:8000/api/v1/event/current")
@@ -108,8 +108,8 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
                     event.title,
                     event.url,
                     event.description,
-                    event.start_date.format("%m/%d/%Y %H:%M").to_string(),
-                    event.end_date.format("%m/%d/%Y %H:%M").to_string()
+                    event.start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
+                    event.end_date.format("%m/%d/%Y %-I:%M%p").to_string()
                 ),
                 false
             )
@@ -125,7 +125,7 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Events")
+                e.title("Events (using PST/PDT)")
                     .image("attachment://cork-board.png")
                     .fields(event_fields)
                     .timestamp(Timestamp::now())
@@ -140,7 +140,7 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[allowed_roles("corkboard")]
-#[description = "Add an Event."]
+#[description = "Add an Event. All times using PST/PDT."]
 #[usage = "title url description start_date end_date"]
 async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let arg_names = vec!("Title", "URL", "Description", "Start Date", "End Date");
@@ -181,7 +181,7 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Created New Event")
+                e.title("Created New Event (using PST/PDT)")
                     .image("attachment://cork-board.png")
                     .field(
                         format!("1. "),
@@ -190,8 +190,8 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                             title,
                             url,
                             description,
-                            start_date.format("%m/%d/%Y %H:%M").to_string(),
-                            end_date.format("%m/%d/%Y %H:%M").to_string()
+                            start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
+                            end_date.format("%m/%d/%Y %-I:%M%p").to_string()
                         ),
                         false
                     )
@@ -206,7 +206,7 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 
 #[command]
 #[allowed_roles("corkboard")]
-#[description = "Edit an Event."]
+#[description = "Edit an Event. All times using PST/PDT."]
 #[usage = "event_id title url description start_date end_date"]
 async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let arg_names = vec!("Event_id", "Title", "URL", "Description", "Start Date", "End Date");
@@ -223,7 +223,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let start_date = args.single_quoted::<String>().unwrap();
     let end_date = args.single_quoted::<String>().unwrap();
 
-    let fmt = "%m/%d/%Y %H:%M";
+    let fmt = "%m/%d/%Y %-I:%M%p";
     let start_date = NaiveDateTime::parse_from_str(start_date.as_str(), fmt)
         .expect("Unable to parse start_date NaiveDateTime for Event.");
     let end_date = NaiveDateTime::parse_from_str(end_date.as_str(), fmt)
@@ -291,7 +291,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Edited Event")
+                e.title("Edited Event (using PST/PDT)")
                     .image("attachment://cork-board.png")
                     .field(
                         format!("{}. ", id),
@@ -300,8 +300,8 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                             title,
                             url,
                             description,
-                            start_date.format("%m/%d/%Y %H:%M").to_string(),
-                            end_date.format("%m/%d/%Y %H:%M").to_string()
+                            start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
+                            end_date.format("%m/%d/%Y %-I:%M%p").to_string()
                         ),
                         false
                     )
@@ -316,7 +316,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
 #[command]
 #[allowed_roles("corkboard")]
-#[description = "Delete an Event."]
+#[description = "Delete an Event. All times using PST/PDT."]
 #[usage = "event_id"]
 async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let arg_names = vec!("Event_id");
@@ -379,7 +379,7 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Deleted Event")
+                e.title("Deleted Event (using PST/PDT)")
                     .image("attachment://cork-board.png")
                     .field(
                         format!("{}. ", id),
@@ -388,8 +388,8 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
                             title,
                             url,
                             description,
-                            start_date.format("%m/%d/%Y %H:%M").to_string(),
-                            end_date.format("%m/%d/%Y %H:%M").to_string()
+                            start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
+                            end_date.format("%m/%d/%Y %-I:%M%p").to_string()
                         ),
                         false
                     )
