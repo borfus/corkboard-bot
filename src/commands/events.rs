@@ -36,10 +36,8 @@ impl Event {
         let id = Uuid::parse_str(id).expect("Bad UUID");
 
         let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-
         let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
             .expect("Unable to parse start_date NaiveDateTime for Event.");
-
         let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
             .expect("Unable to parse end_date NaiveDateTime for Event.");
 
@@ -75,11 +73,9 @@ impl NewEvent {
         start_date: &str,
         end_date: &str
     ) -> Self {
-        let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-
+        let fmt = "%m/%d/%Y %H:%M";
         let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
             .expect("Unable to parse start_date NaiveDateTime for Event.");
-
         let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
             .expect("Unable to parse end_date NaiveDateTime for Event.");
 
@@ -104,7 +100,20 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
     let mut event_fields: Vec<(String, String, bool)> = Vec::new();
     let mut i = 1;
     for event in events {
-        event_fields.push((format!("{}.", i), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", event.title, event.url, event.description, event.start_date, event.end_date), false));
+        event_fields.push(
+            (
+                format!("{}.", i),
+                format!(
+                    "[{}]({}): {}\n**Start:** {}\n**End:** {}",
+                    event.title,
+                    event.url,
+                    event.description,
+                    event.start_date.format("%m/%d/%Y %H:%M").to_string(),
+                    event.end_date.format("%m/%d/%Y %H:%M").to_string()
+                ),
+                false
+            )
+        );
         i += 1;
     }
 
@@ -161,13 +170,31 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     let description = resp.get(0).unwrap().get("description").unwrap();
     let start_date = resp.get(0).unwrap().get("start_date").unwrap();
     let end_date = resp.get(0).unwrap().get("end_date").unwrap();
+
+    let fmt = "%Y-%m-%dT%H:%M:%S%.f";
+    let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
+    let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
+
     let _msg = msg
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
                 e.title("Created New Event")
                     .image("attachment://cork-board.png")
-                    .field(format!("1. "), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", title, url, description, start_date, end_date), false)
+                    .field(
+                        format!("1. "),
+                        format!(
+                            "[{}]({}): {}\n**Start:** {}\n**End:** {}",
+                            title,
+                            url,
+                            description,
+                            start_date.format("%m/%d/%Y %H:%M").to_string(),
+                            end_date.format("%m/%d/%Y %H:%M").to_string()
+                        ),
+                        false
+                    )
                     .timestamp(Timestamp::now())
             })
             .add_file("./resources/cork-board.png")
@@ -195,6 +222,12 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let description = args.single_quoted::<String>().unwrap();
     let start_date = args.single_quoted::<String>().unwrap();
     let end_date = args.single_quoted::<String>().unwrap();
+
+    let fmt = "%m/%d/%Y %H:%M";
+    let start_date = NaiveDateTime::parse_from_str(start_date.as_str(), fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
+    let end_date = NaiveDateTime::parse_from_str(end_date.as_str(), fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
 
     let id_int = match id.parse::<i32>() {
         Ok(i) => i,
@@ -224,7 +257,14 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         }
     };
 
-    let new = Event::new(real_id.as_str(), title, url, description, start_date.as_str(), end_date.as_str());
+    let new = Event::new(
+        real_id.as_str(),
+        title,
+        url,
+        description,
+        start_date.format("%Y-%m-%dT%H:%M:%S").to_string().as_str(),
+        end_date.format("%Y-%m-%dT%H:%M:%S").to_string().as_str()
+    );
 
     println!("Sending Event edit request with {:?}", new);
     let client = reqwest::Client::new();
@@ -240,13 +280,31 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let description = resp.get("description").unwrap();
     let start_date = resp.get("start_date").unwrap();
     let end_date = resp.get("end_date").unwrap();
+
+    let fmt = "%Y-%m-%dT%H:%M:%S%.f";
+    let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
+    let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
+
     let _msg = msg
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
                 e.title("Edited Event")
                     .image("attachment://cork-board.png")
-                    .field(format!("1. "), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", title, url, description, start_date, end_date), false)
+                    .field(
+                        format!("{}. ", id),
+                        format!(
+                            "[{}]({}): {}\n**Start:** {}\n**End:** {}",
+                            title,
+                            url,
+                            description,
+                            start_date.format("%m/%d/%Y %H:%M").to_string(),
+                            end_date.format("%m/%d/%Y %H:%M").to_string()
+                        ),
+                        false
+                    )
                     .timestamp(Timestamp::now())
             })
             .add_file("./resources/cork-board.png")
@@ -310,13 +368,31 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
     let description = resp.get("description").unwrap();
     let start_date = resp.get("start_date").unwrap();
     let end_date = resp.get("end_date").unwrap();
+
+    let fmt = "%Y-%m-%dT%H:%M:%S%.f";
+    let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
+    let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
+        .expect("Unable to parse start_date NaiveDateTime for Event.");
+
     let _msg = msg
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Edited Event")
+                e.title("Deleted Event")
                     .image("attachment://cork-board.png")
-                    .field(format!("1. "), format!("[{}]({}): {}\n**Start:** {}\n**End:** {}", title, url, description, start_date, end_date), false)
+                    .field(
+                        format!("{}. ", id),
+                        format!(
+                            "[{}]({}): {}\n**Start:** {}\n**End:** {}",
+                            title,
+                            url,
+                            description,
+                            start_date.format("%m/%d/%Y %H:%M").to_string(),
+                            end_date.format("%m/%d/%Y %H:%M").to_string()
+                        ),
+                        false
+                    )
                     .timestamp(Timestamp::now())
             })
             .add_file("./resources/cork-board.png")
