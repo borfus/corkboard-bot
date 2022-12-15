@@ -9,6 +9,7 @@ use serenity::model::channel::Message;
 use serenity::framework::standard::macros::command;
 use serenity::framework::standard::CommandResult;
 use serenity::model::Timestamp;
+use serde_json::Value;
 
 use crate::commands::pins::Pin;
 use crate::commands::events::Event;
@@ -92,7 +93,7 @@ async fn get_events() -> Result<(String, String, bool), Box<dyn Error + Send + S
 async fn get_faqs() -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
     let resp = reqwest::get("http://localhost:8000/api/v1/faq")
         .await?
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<Vec<HashMap<String, Value>>>()
         .await?;
     let mut faqs: Vec<Faq> = Vec::new();
     for faq_map in resp {

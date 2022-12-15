@@ -9,6 +9,7 @@ use serenity::framework::standard::macros::command;
 use serenity::framework::standard::{CommandResult, Args};
 use serenity::model::Timestamp;
 use serde::{Serialize, Deserialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::validation::validation;
@@ -16,6 +17,7 @@ use crate::validation::validation;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Faq {
     pub id: Uuid,
+    pub guild_id: i64,
     pub question: String,
     pub answer: String
 }
@@ -23,34 +25,38 @@ pub struct Faq {
 impl Faq {
     pub fn new(
         id: &str,
+        guild_id: i64,
         question: String,
         answer: String
     ) -> Self {
         let id = Uuid::parse_str(id).expect("Bad UUID");
-        Faq {id, question, answer}
+        Faq {id, guild_id, question, answer}
     }
 
-    pub fn to_faq(faq_map: HashMap<String, String>) -> Self {
+    pub fn to_faq(faq_map: HashMap<String, Value>) -> Self {
         Faq::new(
-            faq_map.get("id").unwrap(),
-            faq_map.get("question").unwrap().to_string(),
-            faq_map.get("answer").unwrap().to_string()
+            faq_map.get("id").unwrap().as_str().unwrap(),
+            faq_map.get("guild_id").unwrap().as_i64().unwrap(),
+            faq_map.get("question").unwrap().as_str().unwrap().to_string(),
+            faq_map.get("answer").unwrap().as_str().unwrap().to_string()
         )
     }
 }
 
 #[derive(Serialize, Debug)]
 pub struct NewFaq {
+    pub guild_id: i64,
     pub question: String,
     pub answer: String
 }
 
 impl NewFaq {
     pub fn new(
+        guild_id: i64,
         question: String,
         answer: String
     ) -> Self {
-        NewFaq {question, answer}
+        NewFaq {guild_id, question, answer}
     }
 }
 
@@ -58,10 +64,12 @@ impl NewFaq {
 #[description = "Retrieves all FAQs."]
 async fn faqs(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got FAQs command..");
-    let resp = reqwest::get("http://localhost:8000/api/v1/faq")
+    let resp = reqwest::get(format!("http://localhost:8000/api/v1/faq/guild/{}", msg.guild_id.unwrap()))
         .await?
-        .json::<Vec<HashMap<String, String>>>()
+        // .json::<Vec<HashMap<String, String>>>()
+        .json::<Vec<HashMap<String, Value>>>()
         .await?;
+    println!("We are here now");
     let mut faqs: Vec<Faq> = Vec::new();
     for faq_map in resp {
         faqs.push(Faq::to_faq(faq_map));
@@ -106,9 +114,10 @@ async fn add_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         return Ok(());
     }
 
+    let guild_id = i64::from(msg.guild_id.unwrap());
     let question = args.single_quoted::<String>().unwrap();
     let answer = args.single_quoted::<String>().unwrap();
-    let new = NewFaq::new(question, answer);
+    let new = NewFaq::new(guild_id, question, answer);
 
     println!("Sending new FAQ creation request with {:?}", new);
     let client = reqwest::Client::new();
@@ -116,11 +125,11 @@ async fn add_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .json(&new)
         .send()
         .await?
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<HashMap<String, Value>>()
         .await?;
 
-    let question = resp.get(0).unwrap().get("question").unwrap();
-    let answer = resp.get(0).unwrap().get("answer").unwrap();
+    let question = resp.get("question").unwrap();
+    let answer = resp.get("answer").unwrap();
     let _msg = msg
         .channel_id
         .send_message(&ctx.http, |m| {
@@ -148,6 +157,7 @@ async fn edit_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         return Ok(());
     } 
 
+    let guild_id = i64::from(msg.guild_id.unwrap());
     let id = args.current().unwrap().to_string();
     args.advance();
     let question = args.single_quoted::<String>().unwrap();
@@ -166,7 +176,7 @@ async fn edit_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         }
     };
 
-    let id_map = retrieve_faqs_id_map().await;
+    let id_map = retrieve_faqs_id_map(guild_id).await;
     let real_id_maybe = id_map.get(&id_int).clone();
     let real_id = match real_id_maybe {
         Some(i) => i,
@@ -181,7 +191,7 @@ async fn edit_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         }
     };
 
-    let new = Faq::new(real_id.as_str(), question, answer);
+    let new = Faq::new(real_id.as_str(), guild_id, question, answer);
 
     println!("Sending FAQ edit request with {:?}", new);
     let client = reqwest::Client::new();
@@ -189,7 +199,7 @@ async fn edit_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .json(&new)
         .send()
         .await?
-        .json::<HashMap<String, String>>()
+        .json::<HashMap<String, Value>>()
         .await?;
 
     let question = resp.get("question").unwrap();
@@ -221,6 +231,7 @@ async fn delete_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         return Ok(());
     } 
 
+    let guild_id = i64::from(msg.guild_id.unwrap());
     args.quoted();
     let id = args.current().unwrap().to_string();
     let id_int = match id.parse::<i32>() {
@@ -236,7 +247,7 @@ async fn delete_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         }
     };
 
-    let id_map = retrieve_faqs_id_map().await;
+    let id_map = retrieve_faqs_id_map(guild_id).await;
     let real_id_maybe = id_map.get(&id_int).clone();
     let real_id = match real_id_maybe {
         Some(i) => i,
@@ -256,7 +267,7 @@ async fn delete_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let resp = client.get(format!("http://localhost:8000/api/v1/faq/delete/{}", real_id).as_str())
         .send()
         .await?
-        .json::<HashMap<String, String>>()
+        .json::<HashMap<String, Value>>()
         .await?;
 
     let question = resp.get("question").unwrap();
@@ -277,10 +288,10 @@ async fn delete_faq(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     Ok(())
 }
 
-async fn retrieve_faqs_id_map() -> HashMap<i32, String> {
-    let resp = reqwest::get("http://localhost:8000/api/v1/faq")
+async fn retrieve_faqs_id_map(guild_id: i64) -> HashMap<i32, String> {
+    let resp = reqwest::get(format!("http://localhost:8000/api/v1/faq/guild/{}", guild_id))
         .await.unwrap()
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<Vec<HashMap<String, Value>>>()
         .await.unwrap();
     let mut faqs: Vec<Faq> = Vec::new();
     for faq_map in resp {
