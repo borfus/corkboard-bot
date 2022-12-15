@@ -84,10 +84,19 @@ async fn get_events(msg: &Message) -> Result<(String, String, bool), Box<dyn Err
 
     let mut event_descriptions = String::new();
     for event in events {
-        event_descriptions.push_str(format!("[{}]({}): {}\n", event.title, event.url, event.description).as_str());
+        event_descriptions.push_str(
+            format!(
+                "[{}]({}): {}\n**Start:** {}\n**End:** {}\n\n",
+                event.title,
+                event.url,
+                event.description,
+                event.start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
+                event.end_date.format("%m/%d/%Y %-I:%M%p").to_string()
+            ).as_str()
+        );
     }
 
-    Ok(("Events:".to_string(), event_descriptions, false))
+    Ok(("Events (using PST/PDT):".to_string(), event_descriptions, false))
 }
 
 async fn get_faqs(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
