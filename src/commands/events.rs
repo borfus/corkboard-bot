@@ -9,6 +9,7 @@ use serenity::framework::standard::macros::command;
 use serenity::framework::standard::{CommandResult, Args};
 use serenity::model::Timestamp;
 use serde::{Serialize, Deserialize};
+use serde_json::Value;
 use uuid::Uuid;
 use chrono::NaiveDateTime;
 
@@ -17,6 +18,7 @@ use crate::validation::validation;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Event {
     pub id: Uuid,
+    pub guild_id: i64,
     pub title: String,
     pub url: String,
     pub description: String,
@@ -27,6 +29,7 @@ pub struct Event {
 impl Event {
     pub fn new(
         id: &str,
+        guild_id: i64,
         title: String,
         url: String,
         description: String,
@@ -41,23 +44,25 @@ impl Event {
         let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
             .expect("Unable to parse end_date NaiveDateTime for Event.");
 
-        Event {id, title, url, description, start_date, end_date}
+        Event {id, guild_id, title, url, description, start_date, end_date}
     }
 
-    pub fn to_event(event_map: HashMap<String, String>) -> Event {
+    pub fn to_event(event_map: HashMap<String, Value>) -> Event {
         Event::new(
-            event_map.get("id").unwrap(),
-            event_map.get("title").unwrap().to_string(),
-            event_map.get("url").unwrap().to_string(),
-            event_map.get("description").unwrap().to_string(),
-            event_map.get("start_date").unwrap(),
-            event_map.get("end_date").unwrap()
+            event_map.get("id").unwrap().as_str().unwrap(),
+            event_map.get("guild_id").unwrap().as_i64().unwrap(),
+            event_map.get("title").unwrap().as_str().unwrap().to_string(),
+            event_map.get("url").unwrap().as_str().unwrap().to_string(),
+            event_map.get("description").unwrap().as_str().unwrap().to_string(),
+            event_map.get("start_date").unwrap().as_str().unwrap(),
+            event_map.get("end_date").unwrap().as_str().unwrap()
         )
     }
 }
 
 #[derive(Serialize, Debug)]
 pub struct NewEvent {
+    pub guild_id: i64,
     pub title: String,
     pub url: String,
     pub description: String,
@@ -67,6 +72,7 @@ pub struct NewEvent {
 
 impl NewEvent {
     pub fn new(
+        guild_id: i64,
         title: String,
         url: String,
         description: String,
@@ -79,7 +85,7 @@ impl NewEvent {
         let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
             .expect("Unable to parse end_date NaiveDateTime for Event.");
 
-        NewEvent {title, url, description, start_date, end_date}
+        NewEvent {guild_id, title, url, description, start_date, end_date}
     }
 }
 
@@ -87,9 +93,9 @@ impl NewEvent {
 #[description = "Retrieves all events. All times using PST/PDT."]
 async fn events(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got events command..");
-    let resp = reqwest::get("http://localhost:8000/api/v1/event/current")
+    let resp = reqwest::get(format!("http://localhost:8000/api/v1/event/current/guild/{}", msg.guild_id.unwrap()))
         .await?
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<Vec<HashMap<String, Value>>>()
         .await?;
 
     let mut events: Vec<Event> = Vec::new();
@@ -149,12 +155,13 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         return Ok(());
     }
 
+    let guild_id = i64::from(msg.guild_id.unwrap());
     let title = args.single_quoted::<String>().unwrap();
     let url = args.single_quoted::<String>().unwrap();
     let description = args.single_quoted::<String>().unwrap();
     let start_date = args.single_quoted::<String>().unwrap();
     let end_date = args.single_quoted::<String>().unwrap();
-    let new = NewEvent::new(title, url, description, start_date.as_str(), end_date.as_str());
+    let new = NewEvent::new(guild_id, title, url, description, start_date.as_str(), end_date.as_str());
 
     println!("Sending new Event creation request with {:?}", new);
     let client = reqwest::Client::new();
@@ -162,19 +169,19 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         .json(&new)
         .send()
         .await?
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<HashMap<String, Value>>()
         .await?;
 
-    let title = resp.get(0).unwrap().get("title").unwrap();
-    let url = resp.get(0).unwrap().get("url").unwrap();
-    let description = resp.get(0).unwrap().get("description").unwrap();
-    let start_date = resp.get(0).unwrap().get("start_date").unwrap();
-    let end_date = resp.get(0).unwrap().get("end_date").unwrap();
+    let title = resp.get("title").unwrap();
+    let url = resp.get("url").unwrap();
+    let description = resp.get("description").unwrap();
+    let start_date = resp.get("start_date").unwrap();
+    let end_date = resp.get("end_date").unwrap();
 
     let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-    let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
+    let start_date = NaiveDateTime::parse_from_str(start_date.as_str().unwrap(), fmt)
         .expect("Unable to parse start_date NaiveDateTime for Event.");
-    let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
+    let end_date = NaiveDateTime::parse_from_str(end_date.as_str().unwrap(), fmt)
         .expect("Unable to parse start_date NaiveDateTime for Event.");
 
     let _msg = msg
@@ -215,6 +222,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         return Ok(());
     } 
 
+    let guild_id = i64::from(msg.guild_id.unwrap());
     let id = args.current().unwrap().to_string();
     args.advance();
     let title = args.single_quoted::<String>().unwrap();
@@ -242,7 +250,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         }
     };
 
-    let id_map = retrieve_events_id_map().await;
+    let id_map = retrieve_events_id_map(guild_id).await;
     let real_id_maybe = id_map.get(&id_int).clone();
     let real_id = match real_id_maybe {
         Some(i) => i,
@@ -259,6 +267,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
     let new = Event::new(
         real_id.as_str(),
+        guild_id,
         title,
         url,
         description,
@@ -272,7 +281,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         .json(&new)
         .send()
         .await?
-        .json::<HashMap<String, String>>()
+        .json::<HashMap<String, Value>>()
         .await?;
 
     let title = resp.get("title").unwrap();
@@ -282,9 +291,9 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let end_date = resp.get("end_date").unwrap();
 
     let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-    let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
+    let start_date = NaiveDateTime::parse_from_str(start_date.as_str().unwrap(), fmt)
         .expect("Unable to parse start_date NaiveDateTime for Event.");
-    let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
+    let end_date = NaiveDateTime::parse_from_str(end_date.as_str().unwrap(), fmt)
         .expect("Unable to parse start_date NaiveDateTime for Event.");
 
     let _msg = msg
@@ -325,6 +334,7 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         return Ok(());
     }
 
+    let guild_id = i64::from(msg.guild_id.unwrap());
     args.quoted();
     let id = args.current().unwrap().to_string();
     let id_int = match id.parse::<i32>() {
@@ -340,7 +350,7 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         }
     };
 
-    let id_map = retrieve_events_id_map().await;
+    let id_map = retrieve_events_id_map(guild_id).await;
     let real_id_maybe = id_map.get(&id_int).clone();
     let real_id = match real_id_maybe {
         Some(i) => i,
@@ -360,7 +370,7 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
     let resp = client.get(format!("http://localhost:8000/api/v1/event/delete/{}", real_id).as_str())
         .send()
         .await?
-        .json::<HashMap<String, String>>()
+        .json::<HashMap<String, Value>>()
         .await?;
 
     let title = resp.get("title").unwrap();
@@ -370,9 +380,9 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
     let end_date = resp.get("end_date").unwrap();
 
     let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-    let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
+    let start_date = NaiveDateTime::parse_from_str(start_date.as_str().unwrap(), fmt)
         .expect("Unable to parse start_date NaiveDateTime for Event.");
-    let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
+    let end_date = NaiveDateTime::parse_from_str(end_date.as_str().unwrap(), fmt)
         .expect("Unable to parse start_date NaiveDateTime for Event.");
 
     let _msg = msg
@@ -402,10 +412,10 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
     Ok(())
 }
 
-async fn retrieve_events_id_map() -> HashMap<i32, String> {
-    let resp = reqwest::get("http://localhost:8000/api/v1/event/current")
+async fn retrieve_events_id_map(guild_id: i64) -> HashMap<i32, String> {
+    let resp = reqwest::get(format!("http://localhost:8000/api/v1/event/current/guild/{}", guild_id))
         .await.unwrap()
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<Vec<HashMap<String, Value>>>()
         .await.unwrap();
     let mut events: Vec<Event> = Vec::new();
     for event_map in resp {
