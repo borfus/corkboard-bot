@@ -66,10 +66,8 @@ async fn faqs(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got FAQs command..");
     let resp = reqwest::get(format!("http://localhost:8000/api/v1/faq/guild/{}", msg.guild_id.unwrap()))
         .await?
-        // .json::<Vec<HashMap<String, String>>>()
         .json::<Vec<HashMap<String, Value>>>()
         .await?;
-    println!("We are here now");
     let mut faqs: Vec<Faq> = Vec::new();
     for faq_map in resp {
         faqs.push(Faq::to_faq(faq_map));

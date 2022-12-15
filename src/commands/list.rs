@@ -21,11 +21,11 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got list command..");
 
     let mut all_fields = Vec::new();
-    all_fields.push(get_events().await?);
+    all_fields.push(get_events(msg).await?);
     println!("Got events..");
-    all_fields.push(get_pins().await?);
+    all_fields.push(get_pins(msg).await?);
     println!("Got pins..");
-    all_fields.push(get_faqs().await?);
+    all_fields.push(get_faqs(msg).await?);
     println!("Got faqs..");
 
     let _msg = msg
@@ -45,10 +45,10 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-async fn get_pins() -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
-    let resp = reqwest::get("http://localhost:8000/api/v1/pin")
+async fn get_pins(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
+    let resp = reqwest::get(format!("http://localhost:8000/api/v1/pin/guild/{}", msg.guild_id.unwrap()))
         .await?
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<Vec<HashMap<String, Value>>>()
         .await?;
     let mut pins: Vec<Pin> = Vec::new();
     for pin_map in resp {
@@ -67,7 +67,7 @@ async fn get_pins() -> Result<(String, String, bool), Box<dyn Error + Send + Syn
     Ok(("Pins:".to_string(), pin_descriptions, false))
 }
 
-async fn get_events() -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
+async fn get_events(_msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
     let resp = reqwest::get("http://localhost:8000/api/v1/event/current")
         .await?
         .json::<Vec<HashMap<String, String>>>()
@@ -90,8 +90,8 @@ async fn get_events() -> Result<(String, String, bool), Box<dyn Error + Send + S
     Ok(("Events:".to_string(), event_descriptions, false))
 }
 
-async fn get_faqs() -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
-    let resp = reqwest::get("http://localhost:8000/api/v1/faq")
+async fn get_faqs(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
+    let resp = reqwest::get(format!("http://localhost:8000/api/v1/faq/guild/{}", msg.guild_id.unwrap()))
         .await?
         .json::<Vec<HashMap<String, Value>>>()
         .await?;
