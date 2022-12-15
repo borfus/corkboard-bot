@@ -67,10 +67,10 @@ async fn get_pins(msg: &Message) -> Result<(String, String, bool), Box<dyn Error
     Ok(("Pins:".to_string(), pin_descriptions, false))
 }
 
-async fn get_events(_msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
-    let resp = reqwest::get("http://localhost:8000/api/v1/event/current")
+async fn get_events(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
+    let resp = reqwest::get(format!("http://localhost:8000/api/v1/event/current/guild/{}", msg.guild_id.unwrap()))
         .await?
-        .json::<Vec<HashMap<String, String>>>()
+        .json::<Vec<HashMap<String, Value>>>()
         .await?;
 
     let mut events: Vec<Event> = Vec::new();
