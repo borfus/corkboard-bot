@@ -78,7 +78,7 @@ fn format_for_display(name: &str) -> String {
             return capitalize_hyphenated(name, true);
         }
 
-        // other stuff falls thru and removes the hyphen, like Thundurus-incarnate -> Thundurus Incarnate
+        // other stuff falls thru and removes the hyphen
         return capitalize_hyphenated(name, false);
     }
     return capitalize(name).to_string();
