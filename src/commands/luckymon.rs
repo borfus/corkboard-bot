@@ -37,17 +37,6 @@ async fn read_daily_entry(ctx: &Context, user_id: UserId) -> Option<(i64, bool)>
     entry
 }
 
-// Function that returns a boolean value
-fn is_divisible_by(lhs: u32, rhs: u32) -> bool {
-    // Corner case, early return
-    if rhs == 0 {
-        return false;
-    }
-
-    // This is an expression, the `return` keyword is not necessary here
-    lhs % rhs == 0
-}
-
 fn capitalize(name: &str) -> String {
     let (n1, n2) = name.split_at(1);
     let n_upper = n1.to_uppercase();
@@ -70,7 +59,7 @@ fn has_hyphen(name: &str) -> bool {
 }
 
 fn is_nidoran(name: &str) -> bool {
-    return name.contains("idoran");
+    return name.contains("idoran"); // sorry lol
 }
 
 
@@ -120,7 +109,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got luckymon command..");
     let user_id = msg.author.id;
 
-    let lucky_num = 29; //fastrand::i64(1..=905);
+    let lucky_num = fastrand::i64(1..=905);
     let shiny_num = fastrand::i64(1..=500);
     let mut is_shiny = false;
     if shiny_num == 1 {
