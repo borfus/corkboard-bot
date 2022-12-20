@@ -37,13 +37,51 @@ async fn read_daily_entry(ctx: &Context, user_id: UserId) -> Option<(i64, bool)>
     entry
 }
 
+// Function that returns a boolean value
+fn is_divisible_by(lhs: u32, rhs: u32) -> bool {
+    // Corner case, early return
+    if rhs == 0 {
+        return false;
+    }
+
+    // This is an expression, the `return` keyword is not necessary here
+    lhs % rhs == 0
+}
+
+fn format_for_display(name: &str) -> &str {
+    if name.contains("-") {
+        if name.contains("idoran") {
+            if name.contains("-f") {
+                return "Nidoran\\♀";
+            } else {
+                return "Nidoran\\♂";
+            }
+        }
+    }
+    return name;
+}
+
+fn format_for_bulba(name: &str) -> &str {
+    if name.contains("-") {
+        if name.contains("idoran") {
+            if name.contains("-f") {
+                return "Nidoran%E2%99%80";
+            } else {
+                return "Nidoran%E2%99%82";
+            }
+        }
+        return "fuck!";
+    }
+    return name;
+}
+
 #[command]
 #[description = "Lucky pokemon of the day!"]
 async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got luckymon command..");
     let user_id = msg.author.id;
 
-    let lucky_num = fastrand::i64(1..=905);
+    let lucky_num = 642; //fastrand::i64(1..=905);
     let shiny_num = fastrand::i64(1..=500);
     let mut is_shiny = false;
     if shiny_num == 1 {
@@ -64,8 +102,10 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let rustemon_client = RustemonClient::default();
     let lucky_pokemon: Pokemon = pokemon::get_by_id(daily_pair.0, &rustemon_client).await?;
 
-    let regular_name = lucky_pokemon.name[0..1].to_uppercase() + &lucky_pokemon.name[1..];
-    let mut final_name = String::from(&regular_name);
+    let regular_name = lucky_pokemon.species.name[0..1].to_uppercase() + &lucky_pokemon.species.name[1..];
+    let display_name = format_for_display(&regular_name);
+    let mut final_name = String::from(display_name);
+    let link_name: &str = format_for_bulba(&regular_name);
     let regular_sprite = lucky_pokemon.sprites.front_default.unwrap();
     let shiny_sprite = lucky_pokemon.sprites.front_shiny.unwrap();
     let mut sprite = regular_sprite;
@@ -80,7 +120,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
             m.embed(|e| {
                 e.title("Your lucky pokemon of the day is:")
                     .image(sprite)
-                    .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", regular_name).to_string(), false)))
+                    .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
                     .timestamp(Timestamp::now())
             })
         })
