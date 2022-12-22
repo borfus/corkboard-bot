@@ -149,6 +149,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
                 e.title("Your lucky pokemon of the day is:")
                     .image(sprite)
                     .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
+                    .footer(|f| f.text("Resets daily at 4PM Pacific Time (12AM UTC)"))
                     .timestamp(Timestamp::now())
             })
         })
