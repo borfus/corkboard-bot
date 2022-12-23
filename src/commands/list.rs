@@ -21,11 +21,11 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got list command..");
 
     let mut all_fields = Vec::new();
-    all_fields.push(get_events(msg).await?);
+    all_fields.push(_get_events(msg).await?);
     println!("Got events..");
-    all_fields.push(get_pins(msg).await?);
+    all_fields.push(_get_pins(msg).await?);
     println!("Got pins..");
-    all_fields.push(get_faqs(msg).await?);
+    all_fields.push(_get_faqs(msg).await?);
     println!("Got faqs..");
 
     let _msg = msg
@@ -45,7 +45,7 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-async fn get_pins(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
+async fn _get_pins(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
     let resp = reqwest::get(format!("http://localhost:8000/api/v1/pin/guild/{}", msg.guild_id.unwrap()))
         .await?
         .json::<Vec<HashMap<String, Value>>>()
@@ -67,7 +67,7 @@ async fn get_pins(msg: &Message) -> Result<(String, String, bool), Box<dyn Error
     Ok(("Pins:".to_string(), pin_descriptions, false))
 }
 
-async fn get_events(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
+async fn _get_events(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
     let resp = reqwest::get(format!("http://localhost:8000/api/v1/event/current/guild/{}", msg.guild_id.unwrap()))
         .await?
         .json::<Vec<HashMap<String, Value>>>()
@@ -99,7 +99,7 @@ async fn get_events(msg: &Message) -> Result<(String, String, bool), Box<dyn Err
     Ok(("Events (using PST/PDT):".to_string(), event_descriptions, false))
 }
 
-async fn get_faqs(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
+async fn _get_faqs(msg: &Message) -> Result<(String, String, bool), Box<dyn Error + Send + Sync>> {
     let resp = reqwest::get(format!("http://localhost:8000/api/v1/faq/guild/{}", msg.guild_id.unwrap()))
         .await?
         .json::<Vec<HashMap<String, Value>>>()
