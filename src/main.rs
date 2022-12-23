@@ -1,5 +1,5 @@
 use std::env;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use serenity::async_trait;
 use serenity::prelude::*;
@@ -42,10 +42,6 @@ async fn main() {
         .framework(framework)
         .await
         .expect("Error creating client");
-    {
-        let mut data = client.data.write().await;
-        data.insert::<LuckymonDailyEntry>(HashMap::default());
-    }
 
     // start listening for events by starting a single shard
     if let Err(why) = client.start().await {

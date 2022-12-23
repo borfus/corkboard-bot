@@ -1,40 +1,19 @@
-use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use serenity::prelude::*;
 use serenity::model::channel::Message;
 use serenity::framework::standard::macros::command;
 use serenity::framework::standard::CommandResult;
 use serenity::model::Timestamp;
-use serenity::model::id::UserId;
 use rustemon::pokemon::pokemon;
 use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
-use chrono::NaiveDate;
 
-pub struct LuckymonDailyEntry;
-
-impl TypeMapKey for LuckymonDailyEntry {
-    type Value = HashMap<(UserId, NaiveDate), (i64, bool)>;
-}
-
-async fn write_daily_entry(ctx: &Context, user_id: UserId, lucky_num: i64, shiny: bool) {
-    let today = Timestamp::now().date_naive();
-    let mut data = ctx.data.write().await;
-    let daily_entry = data.get_mut::<LuckymonDailyEntry>().unwrap();
-    let entry = daily_entry.entry((user_id, today)).or_insert((lucky_num, shiny));
-    *entry = (lucky_num, shiny);
-}
-
-async fn read_daily_entry(ctx: &Context, user_id: UserId) -> Option<(i64, bool)> {
-    let today = Timestamp::now().date_naive();
-    let data = ctx.data.read().await;
-    let daily_entry = data.get::<LuckymonDailyEntry>().unwrap();
-    let entry = match daily_entry.get(&(user_id, today)) {
-        Some(num) => Some(*num),
-        None => None
-    };
-
-    entry
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
 
 fn capitalize(name: &str) -> String {
@@ -108,23 +87,21 @@ fn format_for_bulba(name: &str) -> String {
 async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got luckymon command..");
     let user_id = msg.author.id;
+    let today = Timestamp::now().date_naive();
 
-    let lucky_num = fastrand::i64(1..=905);
-    let shiny_num = fastrand::i64(1..=500);
+    let user_hash = calculate_hash(&user_id);
+    let today_hash = calculate_hash(&today);
+    let lucky_num = ((user_hash as u128 + today_hash as u128) % 905) | 1; // 905 is highest pokedex number we can use
+    let shiny_num = (((user_hash as u128 + today_hash as u128) >> 2) % 500) | 1; // 1/500 chance to get a shiny
+
     let mut is_shiny = false;
     if shiny_num == 1 {
         is_shiny = true;
     }
 
-    let mut daily_pair: (i64, bool) = (lucky_num, is_shiny);
+    let daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
 
-    if let Some((num, shiny)) = read_daily_entry(ctx, user_id).await {
-        daily_pair = (num, shiny);
-    } else {
-        write_daily_entry(ctx, user_id, lucky_num, is_shiny).await;
-    }
     println!("User ID {} ran luckymon command!: Got number {} and shiny {}", user_id, daily_pair.0, daily_pair.1);
-    let today = Timestamp::now().date_naive();
     println!("Luckymon daily_pair: {} - {} - {:?}", daily_pair.0, daily_pair.1, today);
 
     let rustemon_client = RustemonClient::default();
