@@ -137,9 +137,12 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let regular_sprite = lucky_pokemon.sprites.front_default.unwrap();
 
     let mut sprite = regular_sprite;
+
     if daily_pair.1 {
-        final_name = format!("Shiny {}", regular_name);
-        sprite = lucky_pokemon.sprites.front_shiny.unwrap()
+        if let Some(shiny_sprite) = lucky_pokemon.sprites.front_shiny {
+            final_name = format!("Shiny {}", final_name);
+            sprite = shiny_sprite;
+        }
     }
 
     let _msg = msg
