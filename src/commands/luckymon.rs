@@ -97,7 +97,7 @@ fn format_for_display(name: &str) -> String {
             return "Type: Null".to_string();
         }
 
-        if is_paradox(name) {
+        if is_paradox(name) || name.starts_with("tapu") {
             return capitalize_hyphenated(name, " ");
         }
 
