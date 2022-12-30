@@ -97,6 +97,10 @@ fn format_for_display(name: &str) -> String {
             return "Type: Null".to_string();
         }
 
+        if is_paradox(name) {
+            return capitalize_hyphenated(name, " ");
+        }
+
         // other stuff falls thru and removes the hyphen
         return capitalize_hyphenated(name, " ");
     }
