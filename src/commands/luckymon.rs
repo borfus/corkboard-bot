@@ -23,12 +23,11 @@ fn capitalize(name: &str) -> String {
     return new_name.to_string();
 }
 
-fn capitalize_hyphenated(name: &str, keep_hyphen: bool) -> String {
+fn capitalize_hyphenated(name: &str, separator: &str) -> String {
     let hyphen_index = name.chars().position(|c| c == '-').unwrap();
     let (n1, eh) = name.split_at(hyphen_index);
     let (_uh, n2) = eh.split_at(1);
-    let middle_char = if keep_hyphen { "-" } else { " " };
-    let new_name = capitalize(n1) + middle_char + &capitalize(n2);
+    let new_name = capitalize(n1) + separator + &capitalize(n2);
     return new_name.to_string();
 }
 
@@ -38,11 +37,18 @@ fn has_hyphen(name: &str) -> bool {
 }
 
 fn is_nidoran(name: &str) -> bool {
-    return name.contains("idoran"); // sorry lol
+    return name.contains("idoran");
+}
+
+fn is_paradox(name: &str) -> bool {
+    // TODO: idk rust @borfus :'3 these are all the latest gen pokemon that aren't covered but also aren't in the dex yet
+    //       i assume there's a better way to do multi starts with matches but idk rn
+    return name.starts_with("iron-") || name.starts_with("scream-") || name.starts_with("slither-") || name.starts_with("brute-") || name.starts_with("great-") || name.starts_with("flutter-") || name.starts_with("sandy-");
 }
 
 
 fn format_for_display(name: &str) -> String {
+    // this includes pokemon with hyphenated names as well as pokemon who have spaces in their names
     if has_hyphen(name) {
         if is_nidoran(name) {
             // nidoran male and female need special display
@@ -53,13 +59,32 @@ fn format_for_display(name: &str) -> String {
             }
         }
 
-        if name.contains("-oh") || name.contains("-z") {
-            return capitalize_hyphenated(name, true);
+        // jangmo-o, hakamo-o, kommo-o don't need changing
+        if name.ends_with("-o") {
+            return capitalize(name).to_string();
+        }
+
+        if name.ends_with("-oh") || name.ends_with("-z") {
+            return capitalize_hyphenated(name, "-");
+        }
+
+        if name.ends_with("-mime") {
+            return "Mr. Mime".to_string();
+        }
+
+        if name.eq("type-null") {
+            return "Type: Null".to_string();
+        }
+
+        if is_paradox(name) || name.starts_with("tapu") {
+            return capitalize_hyphenated(name, " ");
         }
 
         // other stuff falls thru and removes the hyphen
-        return capitalize_hyphenated(name, false);
+        return capitalize_hyphenated(name, " ");
     }
+
+    // fall through when no hyphen and default just to capitalizing the string once at the start;
     return capitalize(name).to_string();
 }
 
@@ -75,8 +100,25 @@ fn format_for_bulba(name: &str) -> String {
             }
         }
 
-        if name.contains("-oh") || name.contains("-z") {
-            return capitalize_hyphenated(name, true);
+        if name.ends_with("-oh") || name.ends_with("-z") {
+            return capitalize_hyphenated(name, "-");
+        }
+
+        if name.ends_with("-mime") {
+            return "Mr._Mime".to_string();
+        }
+        
+        if name.eq("type-null") {
+            return "Type:_Null".to_string();
+        }
+
+        // strip hyphens from the Tapu* pokemon and replace with a space + capitalize
+        if name.starts_with("tapu") {
+            return capitalize_hyphenated(name, "_");
+        }
+
+        if is_paradox(name) {
+            return capitalize_hyphenated(name, "_");
         }
     }
     return capitalize(name).to_string();
