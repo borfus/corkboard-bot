@@ -134,7 +134,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let user_hash = calculate_hash(&user_id);
     let today_hash = calculate_hash(&today);
     let lucky_num = ((user_hash as u128 + today_hash as u128) % (905 + 1)) | 1; // 905 is highest pokedex number we can use
-    let shiny_num = (((user_hash as u128 + today_hash as u128) >> 2) % (500 + 1)) | 1; // 1/500 chance to get a shiny
+    let shiny_num = (((user_hash as u128 + today_hash as u128) >> 10) % (500 + 1)) | 1; // 1/500 chance to get a shiny
 
     let mut is_shiny = false;
     if shiny_num == 1 {
