@@ -31,7 +31,6 @@ fn capitalize_hyphenated(name: &str, separator: &str) -> String {
     return new_name.to_string();
 }
 
-
 fn has_hyphen(name: &str) -> bool {
     return name.contains("-");
 }
@@ -131,10 +130,12 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let user_id = msg.author.id;
     let today = Timestamp::now().date_naive();
 
+    let pokedex_max_num= 905;
+    let one_in_x_shiny_chance = 500; // 1/500 chance to get a shiny
     let user_hash = calculate_hash(&user_id);
     let today_hash = calculate_hash(&today);
-    let lucky_num = ((user_hash as u128 + today_hash as u128) % (905 + 1)) | 1; // 905 is highest pokedex number we can use
-    let shiny_num = (((user_hash as u128 + today_hash as u128) >> 10) % (500 + 1)) | 1; // 1/500 chance to get a shiny
+    let lucky_num = (user_hash as u128 + today_hash as u128) % pokedex_max_num + 1; 
+    let shiny_num = ((user_hash as u128 + today_hash as u128) >> 10) % one_in_x_shiny_chance + 1; 
 
     let mut is_shiny = false;
     if shiny_num == 1 {
@@ -144,6 +145,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
 
     println!("User ID {} ran luckymon command!: Got number {} and shiny {}", user_id, daily_pair.0, daily_pair.1);
+    println!("user_hash: {}\ntoday_hash: {}", user_hash, today_hash);
     println!("Luckymon daily_pair: {} - {} - {:?}", daily_pair.0, daily_pair.1, today);
 
     let rustemon_client = RustemonClient::default();
