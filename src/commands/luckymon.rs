@@ -10,7 +10,7 @@ use rustemon::pokemon::pokemon;
 use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
 
-fn calculate_hash<T: Hash, U: Hash>(t: &T) -> u64 {
+fn calculate_hash<T: Hash, U: Hash>(t: &T, u: &U) -> u64 {
     let mut s = DefaultHasher::new();
     t.hash(&mut s);
     u.hash(&mut s);
@@ -142,10 +142,10 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         is_shiny = true;
     }
 
-    let daily_pair: (i64, bool) = (lucky_num, is_shiny);
+    let daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
 
     println!("User ID {} ran luckymon command!: Got number {} and shiny {}", user_id, daily_pair.0, daily_pair.1);
-    println!("user_hash: {}\ntoday_hash: {}", user_hash, today_hash);
+    println!("user_hash: {}", user_hash);
     println!("Luckymon daily_pair: {} - {} - {:?}", daily_pair.0, daily_pair.1, today);
 
     let rustemon_client = RustemonClient::default();
