@@ -10,9 +10,10 @@ use rustemon::pokemon::pokemon;
 use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
 
-fn calculate_hash<T: Hash>(t: &T) -> u64 {
+fn calculate_hash<T: Hash, U: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
     t.hash(&mut s);
+    u.hash(&mut s);
     s.finish()
 }
 
@@ -132,17 +133,16 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
 
     let pokedex_max_num = 905;
     let one_in_x_shiny_chance = 500; // 1/500 chance to get a shiny
-    let user_hash = calculate_hash(&user_id);
-    let today_hash = calculate_hash(&today);
-    let lucky_num = (user_hash as u128 + today_hash as u128) % pokedex_max_num + 1; 
-    let shiny_num = ((user_hash as u128 + today_hash as u128) >> 10) % one_in_x_shiny_chance + 1; 
+    let user_hash = calculate_hash(&user_id, &today);
+    let lucky_num = user_hash % pokedex_max_num + 1; 
+    let shiny_num = (user_hash >> 10) % one_in_x_shiny_chance + 1; 
 
     let mut is_shiny = false;
     if shiny_num == 1 {
         is_shiny = true;
     }
 
-    let daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
+    let daily_pair: (i64, bool) = (lucky_num, is_shiny);
 
     println!("User ID {} ran luckymon command!: Got number {} and shiny {}", user_id, daily_pair.0, daily_pair.1);
     println!("user_hash: {}\ntoday_hash: {}", user_hash, today_hash);
