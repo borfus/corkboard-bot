@@ -41,9 +41,13 @@ fn is_nidoran(name: &str) -> bool {
 }
 
 fn is_paradox(name: &str) -> bool {
-    // TODO: idk rust @borfus :'3 these are all the latest gen pokemon that aren't covered but also aren't in the dex yet
-    //       i assume there's a better way to do multi starts with matches but idk rn
-    return name.starts_with("iron-") || name.starts_with("scream-") || name.starts_with("slither-") || name.starts_with("brute-") || name.starts_with("great-") || name.starts_with("flutter-") || name.starts_with("sandy-");
+    return name.starts_with("iron-") 
+        || name.starts_with("scream-") 
+        || name.starts_with("slither-") 
+        || name.starts_with("brute-") 
+        || name.starts_with("great-") 
+        || name.starts_with("flutter-") 
+        || name.starts_with("sandy-");
 }
 
 
@@ -173,7 +177,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
                 e.title("Your lucky pokemon of the day is:")
                     .image(sprite)
                     .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
-                    .footer(|f| f.text("Resets daily at 4PM Pacific Time (12AM UTC)"))
+                    .footer(|f| f.text("Resets daily at 5PM Pacific Time (12AM UTC)"))
                     .timestamp(Timestamp::now())
             })
         })
