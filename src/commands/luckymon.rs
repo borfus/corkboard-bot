@@ -182,20 +182,20 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
 
     let regular_name = lucky_pokemon.species.name;
     let display_name = format_for_display(&regular_name);
-    let mut final_name = String::from(display_name);
+    let mut final_name = String::from(display_name.clone());
     let link_name = format_for_bulba(&regular_name);
     let regular_sprite = lucky_pokemon.sprites.front_default.unwrap();
 
     let mut sprite = regular_sprite;
 
+    let new = NewLuckymonHistory::new(i64::from(user_id), today, daily_pair.0, daily_pair.1, &display_name);
+
     if daily_pair.1 {
         if let Some(shiny_sprite) = lucky_pokemon.sprites.front_shiny {
-            final_name = format!("Shiny {}", final_name);
+            final_name = format!("✨ Shiny {} ✨", final_name);
             sprite = shiny_sprite;
         }
     }
-
-    let new = NewLuckymonHistory::new(i64::from(user_id), today, daily_pair.0, daily_pair.1, &final_name);
 
     println!("Sending new LuckymonHistory creation request with {:?}", new);
     let client = reqwest::Client::new();
@@ -214,7 +214,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
             m.embed(|e| {
                 e.title("Your lucky Pokémon of the day is:")
                     .image(sprite)
-                    .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
+                    .fields(vec!((format!("{}", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
                     .footer(|f| {
                         f.text(format!("{} - Resets 5PM PDT (12AM UTC)", author_name));
                         f.icon_url(avatar_url)

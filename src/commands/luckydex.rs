@@ -90,10 +90,10 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
             let emoji = &reaction.as_inner_ref().emoji;
 
             if emoji == &left_arrow {
-                if current_page > 0 {
+                if current_page > 0 && total_pages != 0 {
                     current_page -= 1;
                 }
-            } else if emoji == &right_arrow {
+            } else if emoji == &right_arrow && total_pages != 0 {
                 if current_page < total_pages - 1 {
                     current_page += 1;
                 }
@@ -139,6 +139,10 @@ async fn create_embed_page(
         }
         pokemon_names.push(name);
     }
+    let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
+    if total_pages == 0 {
+        total_pages = 1;
+    }
 
     msg.channel_id
         .send_message(&ctx.http, |m| {
@@ -151,7 +155,7 @@ async fn create_embed_page(
                                 "{}: Page {} of {}",
                                 &msg.author.name,
                                 current_page + 1,
-                                (data.len() as f64 / items_per_page as f64).ceil() as usize
+                                total_pages
                             )
                         );
                         f.icon_url(&msg.author.avatar_url().unwrap())
@@ -210,6 +214,10 @@ async fn update_embed_page(
         }
         pokemon_names.push(name);
     }
+    let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
+    if total_pages == 0 {
+        total_pages = 1;
+    }
 
     let author_name = &original_owner.author.name.clone();
     let avatar_url = &original_owner.author.avatar_url().unwrap().clone();
@@ -224,7 +232,7 @@ async fn update_embed_page(
                             "{}: Page {} of {}",
                             author_name,
                             current_page + 1,
-                            (data.len() as f64 / items_per_page as f64).ceil() as usize
+                            total_pages
                         )
                     );
                     f.icon_url(avatar_url)
