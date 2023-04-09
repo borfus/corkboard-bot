@@ -9,12 +9,12 @@ use serenity::model::channel::Message;
 use serenity::model::id::UserId;
 
 mod commands;
-use commands::{pins::*, events::*, faqs::*, luckymon::*};
+use commands::{pins::*, events::*, faqs::*, luckymon::*, luckydex::*};
 
 mod validation;
 
 #[group]
-#[commands(pins, events, faqs, luckymon)]
+#[commands(pins, events, faqs, luckymon, luckydex)]
 pub struct General;
 
 #[group]
