@@ -161,7 +161,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let today = Timestamp::now().date_naive();
 
     let pokedex_max_num = 905;
-    let one_in_x_shiny_chance = 500; // 1/500 chance to get a shiny
+    let one_in_x_shiny_chance = 400; // 1/500 chance to get a shiny
     let user_hash = calculate_hash(&user_id, &today);
     let lucky_num = user_hash % pokedex_max_num + 1; 
     let shiny_num = (user_hash >> 10) % one_in_x_shiny_chance + 1; 
