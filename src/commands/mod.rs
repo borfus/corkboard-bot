@@ -3,4 +3,5 @@ pub mod events;
 pub mod faqs;
 pub mod list;
 pub mod luckymon;
+pub mod luckydex;
 

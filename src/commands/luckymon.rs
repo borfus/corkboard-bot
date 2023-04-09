@@ -10,50 +10,9 @@ use serenity::model::Timestamp;
 use rustemon::pokemon::pokemon;
 use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 use serde_json::Value;
-use uuid::Uuid;
 use chrono::NaiveDate;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct LuckymonHistory {
-    pub id: Uuid,
-    pub user_id: i64,
-    pub date_obtained: NaiveDate,
-    pub pokemon_id: i64,
-    pub shiny: bool,
-    pub pokemon_name: String
-}
-
-impl LuckymonHistory {
-    pub fn _new(
-        id: &str,
-        user_id: i64,
-        date_obtained: &str,
-        pokemon_id: i64,
-        shiny: bool,
-        pokemon_name: String
-    ) -> Self {
-        let id = Uuid::parse_str(id).expect("Bad UUID");
-
-        let fmt = "%Y-%m-%d";
-        let date_obtained = NaiveDate::parse_from_str(date_obtained, fmt)
-            .expect("Unable to parse date_obtained NaiveDate for LuckymonHistory.");
-
-        LuckymonHistory {id, user_id, date_obtained, pokemon_id, shiny, pokemon_name}
-    }
-
-    pub fn _to_hist(hist_map: HashMap<String, Value>) -> Self {
-        LuckymonHistory::_new(
-            hist_map.get("id").unwrap().as_str().unwrap(),
-            hist_map.get("user_id").unwrap().as_i64().unwrap(),
-            hist_map.get("date_obtained").unwrap().as_str().unwrap(),
-            hist_map.get("pokemon_id").unwrap().as_i64().unwrap(),
-            hist_map.get("shiny").unwrap().as_bool().unwrap(),
-            hist_map.get("pokemon_name").unwrap().as_str().unwrap().to_string()
-        )
-    }
-}
 
 #[derive(Serialize, Debug)]
 pub struct NewLuckymonHistory {
@@ -247,15 +206,19 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         .json::<HashMap<String, Value>>()
         .await?;
 
+    let author_name = &msg.author.name.clone();
+    let avatar_url = &msg.author.avatar_url().unwrap().clone();
     let _msg = msg
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Your lucky pokemon of the day is:")
+                e.title("Your lucky Pokémon of the day is:")
                     .image(sprite)
                     .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
-                    .footer(|f| f.text("Resets daily at 5PM Pacific Time (12AM UTC)"))
-                    .timestamp(Timestamp::now())
+                    .footer(|f| {
+                        f.text(format!("{} - Resets 5PM PDT (12AM UTC)", author_name));
+                        f.icon_url(avatar_url)
+                    })
             })
         })
         .await;
