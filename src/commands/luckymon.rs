@@ -1,5 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
 use serenity::prelude::*;
 use serenity::model::channel::Message;
@@ -9,6 +10,71 @@ use serenity::model::Timestamp;
 use rustemon::pokemon::pokemon;
 use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
+use serde::{Serialize, Deserialize};
+use serde_json::Value;
+use uuid::Uuid;
+use chrono::NaiveDate;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LuckymonHistory {
+    pub id: Uuid,
+    pub user_id: i64,
+    pub date_obtained: NaiveDate,
+    pub pokemon_id: i64,
+    pub shiny: bool,
+    pub pokemon_name: String
+}
+
+impl LuckymonHistory {
+    pub fn _new(
+        id: &str,
+        user_id: i64,
+        date_obtained: &str,
+        pokemon_id: i64,
+        shiny: bool,
+        pokemon_name: String
+    ) -> Self {
+        let id = Uuid::parse_str(id).expect("Bad UUID");
+
+        let fmt = "%Y-%m-%d";
+        let date_obtained = NaiveDate::parse_from_str(date_obtained, fmt)
+            .expect("Unable to parse date_obtained NaiveDate for LuckymonHistory.");
+
+        LuckymonHistory {id, user_id, date_obtained, pokemon_id, shiny, pokemon_name}
+    }
+
+    pub fn _to_hist(hist_map: HashMap<String, Value>) -> Self {
+        LuckymonHistory::_new(
+            hist_map.get("id").unwrap().as_str().unwrap(),
+            hist_map.get("user_id").unwrap().as_i64().unwrap(),
+            hist_map.get("date_obtained").unwrap().as_str().unwrap(),
+            hist_map.get("pokemon_id").unwrap().as_i64().unwrap(),
+            hist_map.get("shiny").unwrap().as_bool().unwrap(),
+            hist_map.get("pokemon_name").unwrap().as_str().unwrap().to_string()
+        )
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct NewLuckymonHistory {
+    pub user_id: i64,
+    pub date_obtained: NaiveDate,
+    pub pokemon_id: i64,
+    pub shiny: bool,
+    pub pokemon_name: String
+}
+
+impl NewLuckymonHistory {
+    pub fn new(
+        user_id: i64,
+        date_obtained: NaiveDate,
+        pokemon_id: i64,
+        shiny: bool,
+        pokemon_name: &String
+    ) -> Self {
+        NewLuckymonHistory {user_id, date_obtained, pokemon_id, shiny, pokemon_name: pokemon_name.to_string()}
+    }
+}
 
 fn calculate_hash<T: Hash, U: Hash>(t: &T, u: &U) -> u64 {
     let mut s = DefaultHasher::new();
@@ -169,6 +235,17 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
             sprite = shiny_sprite;
         }
     }
+
+    let new = NewLuckymonHistory::new(i64::from(user_id), today, daily_pair.0, daily_pair.1, &final_name);
+
+    println!("Sending new LuckymonHistory creation request with {:?}", new);
+    let client = reqwest::Client::new();
+    let _resp = client.post("http://localhost:8000/api/v1/luckymon-history")
+        .json(&new)
+        .send()
+        .await?
+        .json::<HashMap<String, Value>>()
+        .await?;
 
     let _msg = msg
         .channel_id
