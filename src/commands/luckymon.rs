@@ -1,5 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
 use serenity::prelude::*;
 use serenity::model::channel::Message;
@@ -9,6 +10,30 @@ use serenity::model::Timestamp;
 use rustemon::pokemon::pokemon;
 use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
+use serde::Serialize;
+use serde_json::Value;
+use chrono::NaiveDate;
+
+#[derive(Serialize, Debug)]
+pub struct NewLuckymonHistory {
+    pub user_id: i64,
+    pub date_obtained: NaiveDate,
+    pub pokemon_id: i64,
+    pub shiny: bool,
+    pub pokemon_name: String
+}
+
+impl NewLuckymonHistory {
+    pub fn new(
+        user_id: i64,
+        date_obtained: NaiveDate,
+        pokemon_id: i64,
+        shiny: bool,
+        pokemon_name: &String
+    ) -> Self {
+        NewLuckymonHistory {user_id, date_obtained, pokemon_id, shiny, pokemon_name: pokemon_name.to_string()}
+    }
+}
 
 fn calculate_hash<T: Hash, U: Hash>(t: &T, u: &U) -> u64 {
     let mut s = DefaultHasher::new();
@@ -157,28 +182,43 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
 
     let regular_name = lucky_pokemon.species.name;
     let display_name = format_for_display(&regular_name);
-    let mut final_name = String::from(display_name);
+    let mut final_name = String::from(display_name.clone());
     let link_name = format_for_bulba(&regular_name);
     let regular_sprite = lucky_pokemon.sprites.front_default.unwrap();
 
     let mut sprite = regular_sprite;
 
+    let new = NewLuckymonHistory::new(i64::from(user_id), today, daily_pair.0, daily_pair.1, &display_name);
+
     if daily_pair.1 {
         if let Some(shiny_sprite) = lucky_pokemon.sprites.front_shiny {
-            final_name = format!("Shiny {}", final_name);
+            final_name = format!("✨ Shiny {} ✨", final_name);
             sprite = shiny_sprite;
         }
     }
 
+    println!("Sending new LuckymonHistory creation request with {:?}", new);
+    let client = reqwest::Client::new();
+    let _resp = client.post("http://localhost:8000/api/v1/luckymon-history")
+        .json(&new)
+        .send()
+        .await?
+        .json::<HashMap<String, Value>>()
+        .await?;
+
+    let author_name = &msg.author.name.clone();
+    let avatar_url = &msg.author.avatar_url().unwrap().clone();
     let _msg = msg
         .channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Your lucky pokemon of the day is:")
+                e.title("Your lucky Pokémon of the day is:")
                     .image(sprite)
-                    .fields(vec!((format!("{}!", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
-                    .footer(|f| f.text("Resets daily at 5PM Pacific Time (12AM UTC)"))
-                    .timestamp(Timestamp::now())
+                    .fields(vec!((format!("{}", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
+                    .footer(|f| {
+                        f.text(format!("{} - Resets 5PM PDT (12AM UTC)", author_name));
+                        f.icon_url(avatar_url)
+                    })
             })
         })
         .await;
