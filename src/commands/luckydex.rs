@@ -7,7 +7,9 @@ use serenity::framework::standard::macros::command;
 use serenity::framework::standard::CommandResult;
 use serenity::model::Timestamp;
 use serenity::utils::Colour;
-use serenity::model::prelude::ReactionType;
+use serenity::model::application::component::ButtonStyle;
+use serenity::builder::{CreateActionRow, CreateComponents};
+use serenity::model::application::interaction::InteractionResponseType;
 
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
@@ -73,42 +75,33 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
 
     let mut message = create_embed_page(ctx, msg, &hists, items_per_page, current_page).await?;
 
-    let left_arrow = ReactionType::Unicode("⬅️".to_string());
-    let right_arrow = ReactionType::Unicode("➡️".to_string());
-
-    message.react(&ctx.http, left_arrow.clone()).await?;
-    message.react(&ctx.http, right_arrow.clone()).await?;
-
-    loop {
-        if let Some(reaction) = &message
-            .await_reaction(&ctx)
+    while let Some(interaction) = message
+            .await_component_interaction(&ctx)
             .timeout(Duration::from_secs(120))
             .await
-        {
-            if let Err(why) = reaction.as_inner_ref().delete(&ctx.http).await {
-                println!("Error deleting reaction: {:?}", why);
-            }
-
-            if reaction.as_inner_ref().user_id != Some(msg.author.id) {
-                continue;
-            }
-
-            let emoji = &reaction.as_inner_ref().emoji;
-
-            if emoji == &left_arrow {
-                if current_page > 0 && total_pages != 0 {
-                    current_page -= 1;
-                }
-            } else if emoji == &right_arrow && total_pages != 0 {
-                if current_page < total_pages - 1 {
-                    current_page += 1;
-                }
-            }
-
-            update_embed_page(ctx, &mut message, &hists, items_per_page, current_page, &msg).await?;
-        } else {
-            break;
+    {
+        if interaction.user.id != msg.author.id {
+            continue;
         }
+
+        let custom_id = &interaction.data.custom_id;
+        if custom_id == "prev" && current_page > 0 {
+            current_page -= 1;
+        } else if custom_id == "next" && current_page < total_pages - 1 {
+            current_page += 1;
+        }
+
+        message = update_embed_page(ctx, &mut message, &hists, items_per_page, current_page, &msg).await?;
+
+        interaction
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(InteractionResponseType::UpdateMessage);
+                r.interaction_response_data(|d| {
+                    d.set_embed(message.embeds[0].clone().into());
+                    d
+                })
+            })
+            .await?;
     }
 
     println!("Finished processing luckydex command!");
@@ -146,6 +139,23 @@ async fn create_embed_page(
         total_pages = 1;
     }
 
+    let action_row = CreateActionRow::default()
+        .create_button(|b| {
+            b.style(ButtonStyle::Primary)
+                .custom_id("prev")
+                .disabled(current_page == 0)
+                .label("Previous")
+        })
+        .create_button(|b| {
+            b.style(ButtonStyle::Primary)
+                .custom_id("next")
+                .disabled(current_page == total_pages - 1)
+                .label("Next")
+        })
+        .clone();
+
+    let components = CreateComponents::default().add_action_row(action_row).clone();
+
     msg.channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
@@ -172,7 +182,8 @@ async fn create_embed_page(
                 e.timestamp(Timestamp::now());
 
                 e
-            })
+            });
+            m.set_components(components.clone())
         })
         .await
 }
@@ -184,7 +195,7 @@ async fn update_embed_page(
     items_per_page: usize,
     current_page: usize,
     original_owner: &Message
-) -> serenity::Result<()> {
+) -> serenity::Result<Message> {
     let start_index = current_page * items_per_page;
     let end_index = usize::min(start_index + items_per_page, data.len());
 
@@ -213,7 +224,25 @@ async fn update_embed_page(
     let author_name = &original_owner.author.name.clone();
     let avatar_url = &original_owner.author.avatar_url().unwrap().clone();
 
-    msg.edit(&ctx.http, |m| {
+    let action_row = CreateActionRow::default()
+        .create_button(|b| {
+            b.style(ButtonStyle::Primary)
+                .custom_id("prev")
+                .disabled(current_page == 0)
+                .label("Previous")
+        })
+        .create_button(|b| {
+            b.style(ButtonStyle::Primary)
+                .custom_id("next")
+                .disabled(current_page == total_pages - 1)
+                .label("Next")
+        })
+        .clone();
+
+    let components = CreateComponents::default().add_action_row(action_row).clone();
+
+    msg.channel_id
+        .edit_message(&ctx.http, msg.id, |m| {
         m.embed(|e| {
             e.title("Luckydex")
                 .color(Colour::from_rgb(0, 255, 255))
@@ -238,7 +267,8 @@ async fn update_embed_page(
             e.timestamp(Timestamp::now());
 
             e
-        })
+        });
+        m.set_components(components.clone())
     })
     .await
 }
