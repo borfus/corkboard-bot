@@ -81,6 +81,16 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
             .await
     {
         if interaction.user.id != msg.author.id {
+            interaction
+                .create_interaction_response(&ctx.http, |r| {
+                    r.kind(InteractionResponseType::UpdateMessage);
+                    r.interaction_response_data(|d| {
+                        d.set_embed(message.embeds[0].clone().into());
+                        d
+                    })
+                })
+                .await?;
+
             continue;
         }
 
