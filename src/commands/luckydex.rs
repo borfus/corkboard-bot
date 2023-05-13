@@ -67,7 +67,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
         hists.push(LuckymonHistory::to_hist(hist_map));
     }
 
-    let items_per_page = 20;
+    let items_per_page = 10;
     let total_pages = (hists.len() as f64 / items_per_page as f64).ceil() as usize;
     let mut current_page = 0;
 
@@ -82,11 +82,17 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     loop {
         if let Some(reaction) = &message
             .await_reaction(&ctx)
-            .timeout(Duration::from_secs(20))
-            .author_id(msg.author.id)
+            .timeout(Duration::from_secs(120))
             .await
         {
-            println!("Reached inside reaction!!");
+            if let Err(why) = reaction.as_inner_ref().delete(&ctx.http).await {
+                println!("Error deleting reaction: {:?}", why);
+            }
+
+            if reaction.as_inner_ref().user_id != Some(msg.author.id) {
+                continue;
+            }
+
             let emoji = &reaction.as_inner_ref().emoji;
 
             if emoji == &left_arrow {
@@ -100,10 +106,6 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
             }
 
             update_embed_page(ctx, &mut message, &hists, items_per_page, current_page, &msg).await?;
-
-            if let Err(why) = reaction.as_inner_ref().delete(&ctx.http).await {
-                println!("Error deleting reaction: {:?}", why);
-            }
         } else {
             break;
         }
@@ -125,19 +127,19 @@ async fn create_embed_page(
 
     let current_data = &data[start_index..end_index];
 
-    let mut pokedex_numbers = Vec::new(); 
-    let mut pokemon_names = Vec::new(); 
-    let mut dates = Vec::new(); 
+    let mut pokemon_entry = Vec::new();
 
     for hist in current_data {
-        pokedex_numbers.push(hist.pokemon_id);
-        dates.push(hist.date_obtained);
+        let pokedex_number = hist.pokemon_id;
+        let date = hist.date_obtained;
 
         let mut name = hist.pokemon_name.clone();
         if hist.shiny {
             name = format!("✨{}✨", hist.pokemon_name.clone())
         }
-        pokemon_names.push(name);
+
+        let entry = format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date);
+        pokemon_entry.push(entry);
     }
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
     if total_pages == 0 {
@@ -147,7 +149,7 @@ async fn create_embed_page(
     msg.channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
-                e.title("Luckymon History")
+                e.title("Luckydex")
                     .color(Colour::from_rgb(0, 255, 255))
                     .footer(|f| {
                         f.text(
@@ -162,20 +164,8 @@ async fn create_embed_page(
                     });
 
                 e.field(
-                    "Pokédex #",
-                    pokedex_numbers.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
-                    true,
-                );
-
-                e.field(
-                    "Pokémon's Name",
-                    pokemon_names.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
-                    true,
-                );
-
-                e.field(
-                    "Obtained (YYYY-MM-DD)",
-                    dates.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
+                    "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
+                    pokemon_entry.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
                     true,
                 );
 
@@ -200,20 +190,21 @@ async fn update_embed_page(
 
     let current_data = &data[start_index..end_index];
 
-    let mut pokedex_numbers = Vec::new(); 
-    let mut pokemon_names = Vec::new(); 
-    let mut dates = Vec::new(); 
+    let mut pokemon_entry = Vec::new();
 
     for hist in current_data {
-        pokedex_numbers.push(hist.pokemon_id);
-        dates.push(hist.date_obtained);
+        let pokedex_number = hist.pokemon_id;
+        let date = hist.date_obtained;
 
         let mut name = hist.pokemon_name.clone();
         if hist.shiny {
             name = format!("✨{}✨", hist.pokemon_name.clone())
         }
-        pokemon_names.push(name);
+
+        let entry = format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date);
+        pokemon_entry.push(entry);
     }
+
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
     if total_pages == 0 {
         total_pages = 1;
@@ -224,7 +215,7 @@ async fn update_embed_page(
 
     msg.edit(&ctx.http, |m| {
         m.embed(|e| {
-            e.title("Luckymon History")
+            e.title("Luckydex")
                 .color(Colour::from_rgb(0, 255, 255))
                 .footer(|f| {
                     f.text(
@@ -239,20 +230,8 @@ async fn update_embed_page(
                 });
 
             e.field(
-                "Pokédex #",
-                pokedex_numbers.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
-                true,
-            );
-
-            e.field(
-                "Pokémon's Name",
-                pokemon_names.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
-                true,
-            );
-
-            e.field(
-                "Obtained (YYYY-MM-DD)",
-                dates.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
+                "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
+                pokemon_entry.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
                 true,
             );
 
