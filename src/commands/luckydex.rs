@@ -81,7 +81,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
             .await
     {
         if interaction.user.id != msg.author.id {
-            continue;
+            return Ok(())
         }
 
         let custom_id = &interaction.data.custom_id;
@@ -131,8 +131,11 @@ async fn create_embed_page(
             name = format!("✨{}✨", hist.pokemon_name.clone())
         }
 
-        let entry = format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date);
-        pokemon_entry.push(entry);
+        if !hist.shiny {
+            pokemon_entry.push(format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date));
+        } else {
+            pokemon_entry.push(format!("`{:<10} {:<14} {:<22}`", pokedex_number, name, date));
+        }
     }
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
     if total_pages == 0 {
@@ -212,8 +215,11 @@ async fn update_embed_page(
             name = format!("✨{}✨", hist.pokemon_name.clone())
         }
 
-        let entry = format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date);
-        pokemon_entry.push(entry);
+        if !hist.shiny {
+            pokemon_entry.push(format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date));
+        } else {
+            pokemon_entry.push(format!("`{:<10} {:<14} {:<22}`", pokedex_number, name, date));
+        }
     }
 
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
