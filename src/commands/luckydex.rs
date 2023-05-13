@@ -81,7 +81,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
             .await
     {
         if interaction.user.id != msg.author.id {
-            return Ok(())
+            continue;
         }
 
         let custom_id = &interaction.data.custom_id;
