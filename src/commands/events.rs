@@ -3,15 +3,15 @@ extern crate serde_json;
 
 use std::collections::HashMap;
 
-use serenity::prelude::*;
-use serenity::model::channel::Message;
-use serenity::framework::standard::macros::command;
-use serenity::framework::standard::{CommandResult, Args};
-use serenity::model::Timestamp;
-use serde::{Serialize, Deserialize};
-use serde_json::Value;
-use uuid::Uuid;
 use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use serenity::framework::standard::macros::command;
+use serenity::framework::standard::{Args, CommandResult};
+use serenity::model::channel::Message;
+use serenity::model::Timestamp;
+use serenity::prelude::*;
+use uuid::Uuid;
 
 use crate::validation::validation;
 
@@ -23,7 +23,7 @@ pub struct Event {
     pub url: String,
     pub description: String,
     pub start_date: NaiveDateTime,
-    pub end_date: NaiveDateTime
+    pub end_date: NaiveDateTime,
 }
 
 impl Event {
@@ -34,7 +34,7 @@ impl Event {
         url: String,
         description: String,
         start_date: &str,
-        end_date: &str 
+        end_date: &str,
     ) -> Self {
         let id = Uuid::parse_str(id).expect("Bad UUID");
 
@@ -44,18 +44,36 @@ impl Event {
         let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
             .expect("Unable to parse end_date NaiveDateTime for Event.");
 
-        Event {id, guild_id, title, url, description, start_date, end_date}
+        Event {
+            id,
+            guild_id,
+            title,
+            url,
+            description,
+            start_date,
+            end_date,
+        }
     }
 
     pub fn to_event(event_map: HashMap<String, Value>) -> Event {
         Event::new(
             event_map.get("id").unwrap().as_str().unwrap(),
             event_map.get("guild_id").unwrap().as_i64().unwrap(),
-            event_map.get("title").unwrap().as_str().unwrap().to_string(),
+            event_map
+                .get("title")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
             event_map.get("url").unwrap().as_str().unwrap().to_string(),
-            event_map.get("description").unwrap().as_str().unwrap().to_string(),
+            event_map
+                .get("description")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
             event_map.get("start_date").unwrap().as_str().unwrap(),
-            event_map.get("end_date").unwrap().as_str().unwrap()
+            event_map.get("end_date").unwrap().as_str().unwrap(),
         )
     }
 }
@@ -67,7 +85,7 @@ pub struct NewEvent {
     pub url: String,
     pub description: String,
     pub start_date: NaiveDateTime,
-    pub end_date: NaiveDateTime
+    pub end_date: NaiveDateTime,
 }
 
 impl NewEvent {
@@ -77,7 +95,7 @@ impl NewEvent {
         url: String,
         description: String,
         start_date: &str,
-        end_date: &str
+        end_date: &str,
     ) -> Self {
         let fmt = "%m/%d/%Y %-I:%M%p";
         let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
@@ -85,7 +103,14 @@ impl NewEvent {
         let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
             .expect("Unable to parse end_date NaiveDateTime for Event.");
 
-        NewEvent {guild_id, title, url, description, start_date, end_date}
+        NewEvent {
+            guild_id,
+            title,
+            url,
+            description,
+            start_date,
+            end_date,
+        }
     }
 }
 
@@ -93,10 +118,13 @@ impl NewEvent {
 #[description = "Retrieves all events. All times using PST/PDT."]
 async fn events(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got events command..");
-    let resp = reqwest::get(format!("http://localhost:8000/api/v1/event/current/guild/{}", msg.guild_id.unwrap()))
-        .await?
-        .json::<Vec<HashMap<String, Value>>>()
-        .await?;
+    let resp = reqwest::get(format!(
+        "http://localhost:8000/api/v1/event/current/guild/{}",
+        msg.guild_id.unwrap()
+    ))
+    .await?
+    .json::<Vec<HashMap<String, Value>>>()
+    .await?;
 
     let mut events: Vec<Event> = Vec::new();
     for event_map in resp {
@@ -106,25 +134,27 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
     let mut event_fields: Vec<(String, String, bool)> = Vec::new();
     let mut i = 1;
     for event in events {
-        event_fields.push(
-            (
-                format!("{}.", i),
-                format!(
-                    "[{}]({}): {}\n**Start:** {}\n**End:** {}",
-                    event.title,
-                    event.url,
-                    event.description,
-                    event.start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
-                    event.end_date.format("%m/%d/%Y %-I:%M%p").to_string()
-                ),
-                false
-            )
-        );
+        event_fields.push((
+            format!("{}.", i),
+            format!(
+                "[{}]({}): {}\n**Start:** {}\n**End:** {}",
+                event.title,
+                event.url,
+                event.description,
+                event.start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
+                event.end_date.format("%m/%d/%Y %-I:%M%p").to_string()
+            ),
+            false,
+        ));
         i += 1;
     }
 
     if event_fields.len() == 0 {
-        event_fields.push(("Empty!".to_string(), "No current events found!".to_string(), false));
+        event_fields.push((
+            "Empty!".to_string(),
+            "No current events found!".to_string(),
+            false,
+        ));
     }
 
     let _msg = msg
@@ -149,9 +179,10 @@ async fn events(ctx: &Context, msg: &Message) -> CommandResult {
 #[description = "Add an Event. All times using PST/PDT."]
 #[usage = "title url description start_date end_date"]
 async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!("Title", "URL", "Description", "Start Date", "End Date");
-    if !validation::has_corkboard_role(ctx, msg).await 
-        || !validation::has_correct_arg_count(ctx, msg, 5, args.len(), arg_names, "add_event").await {
+    let arg_names = vec!["Title", "URL", "Description", "Start Date", "End Date"];
+    if !validation::has_corkboard_role(ctx, msg).await
+        || !validation::has_correct_arg_count(ctx, msg, 5, args.len(), arg_names, "add_event").await
+    {
         return Ok(());
     }
 
@@ -161,11 +192,19 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     let description = args.single_quoted::<String>().unwrap();
     let start_date = args.single_quoted::<String>().unwrap();
     let end_date = args.single_quoted::<String>().unwrap();
-    let new = NewEvent::new(guild_id, title, url, description, start_date.as_str(), end_date.as_str());
+    let new = NewEvent::new(
+        guild_id,
+        title,
+        url,
+        description,
+        start_date.as_str(),
+        end_date.as_str(),
+    );
 
     println!("Sending new Event creation request with {:?}", new);
     let client = reqwest::Client::new();
-    let resp = client.post("http://localhost:8000/api/v1/event")
+    let resp = client
+        .post("http://localhost:8000/api/v1/event")
         .json(&new)
         .send()
         .await?
@@ -200,7 +239,7 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                             start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
                             end_date.format("%m/%d/%Y %-I:%M%p").to_string()
                         ),
-                        false
+                        false,
                     )
                     .timestamp(Timestamp::now())
             })
@@ -216,11 +255,20 @@ async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 #[description = "Edit an Event. All times using PST/PDT."]
 #[usage = "event_id title url description start_date end_date"]
 async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!("Event_id", "Title", "URL", "Description", "Start Date", "End Date");
-    if !validation::has_corkboard_role(ctx, msg).await 
-        || !validation::has_correct_arg_count(ctx, msg, 6, args.len(), arg_names, "edit_event").await {
+    let arg_names = vec![
+        "Event_id",
+        "Title",
+        "URL",
+        "Description",
+        "Start Date",
+        "End Date",
+    ];
+    if !validation::has_corkboard_role(ctx, msg).await
+        || !validation::has_correct_arg_count(ctx, msg, 6, args.len(), arg_names, "edit_event")
+            .await
+    {
         return Ok(());
-    } 
+    }
 
     let guild_id = i64::from(msg.guild_id.unwrap());
     let id = args.current().unwrap().to_string();
@@ -241,9 +289,10 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         Ok(i) => i,
         _error => {
             let _msg = msg
-                .channel_id.say(
+                .channel_id
+                .say(
                     &ctx.http,
-                    ":bangbang: Error :bangbang: - Unable to parse ID."
+                    ":bangbang: Error :bangbang: - Unable to parse ID.",
                 )
                 .await;
             return Ok(());
@@ -272,12 +321,13 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         url,
         description,
         start_date.format("%Y-%m-%dT%H:%M:%S").to_string().as_str(),
-        end_date.format("%Y-%m-%dT%H:%M:%S").to_string().as_str()
+        end_date.format("%Y-%m-%dT%H:%M:%S").to_string().as_str(),
     );
 
     println!("Sending Event edit request with {:?}", new);
     let client = reqwest::Client::new();
-    let resp = client.put(format!("http://localhost:8000/api/v1/event/{}", real_id).as_str())
+    let resp = client
+        .put(format!("http://localhost:8000/api/v1/event/{}", real_id).as_str())
         .json(&new)
         .send()
         .await?
@@ -312,7 +362,7 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                             start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
                             end_date.format("%m/%d/%Y %-I:%M%p").to_string()
                         ),
-                        false
+                        false,
                     )
                     .timestamp(Timestamp::now())
             })
@@ -328,9 +378,11 @@ async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 #[description = "Delete an Event. All times using PST/PDT."]
 #[usage = "event_id"]
 async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!("Event_id");
-    if !validation::has_corkboard_role(ctx, msg).await 
-        || !validation::has_correct_arg_count(ctx, msg, 1, args.len(), arg_names, "delete_event").await {
+    let arg_names = vec!["Event_id"];
+    if !validation::has_corkboard_role(ctx, msg).await
+        || !validation::has_correct_arg_count(ctx, msg, 1, args.len(), arg_names, "delete_event")
+            .await
+    {
         return Ok(());
     }
 
@@ -341,9 +393,10 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
         Ok(i) => i,
         _error => {
             let _msg = msg
-                .channel_id.say(
+                .channel_id
+                .say(
                     &ctx.http,
-                    ":bangbang: Error :bangbang: - Unable to parse ID."
+                    ":bangbang: Error :bangbang: - Unable to parse ID.",
                 )
                 .await;
             return Ok(());
@@ -367,7 +420,8 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
 
     println!("Sending Event delete request with ID {:?}", real_id);
     let client = reqwest::Client::new();
-    let resp = client.get(format!("http://localhost:8000/api/v1/event/delete/{}", real_id).as_str())
+    let resp = client
+        .get(format!("http://localhost:8000/api/v1/event/delete/{}", real_id).as_str())
         .send()
         .await?
         .json::<HashMap<String, Value>>()
@@ -401,7 +455,7 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
                             start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
                             end_date.format("%m/%d/%Y %-I:%M%p").to_string()
                         ),
-                        false
+                        false,
                     )
                     .timestamp(Timestamp::now())
             })
@@ -413,16 +467,21 @@ async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandRe
 }
 
 async fn retrieve_events_id_map(guild_id: i64) -> HashMap<i32, String> {
-    let resp = reqwest::get(format!("http://localhost:8000/api/v1/event/current/guild/{}", guild_id))
-        .await.unwrap()
-        .json::<Vec<HashMap<String, Value>>>()
-        .await.unwrap();
+    let resp = reqwest::get(format!(
+        "http://localhost:8000/api/v1/event/current/guild/{}",
+        guild_id
+    ))
+    .await
+    .unwrap()
+    .json::<Vec<HashMap<String, Value>>>()
+    .await
+    .unwrap();
     let mut events: Vec<Event> = Vec::new();
     for event_map in resp {
         events.push(Event::to_event(event_map));
     }
 
-    let mut result : HashMap<i32, String> = HashMap::new();
+    let mut result: HashMap<i32, String> = HashMap::new();
     let mut i = 1;
     for event in events {
         result.insert(i, event.id.to_string());
@@ -431,4 +490,3 @@ async fn retrieve_events_id_map(guild_id: i64) -> HashMap<i32, String> {
 
     result
 }
-

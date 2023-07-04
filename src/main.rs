@@ -1,15 +1,17 @@
-use std::env;
 use std::collections::HashSet;
+use std::env;
 
 use serenity::async_trait;
-use serenity::prelude::*;
-use serenity::framework::standard::{StandardFramework, help_commands, HelpOptions, CommandGroup, CommandResult, Args};
 use serenity::framework::standard::macros::{group, help};
+use serenity::framework::standard::{
+    help_commands, Args, CommandGroup, CommandResult, HelpOptions, StandardFramework,
+};
 use serenity::model::channel::Message;
 use serenity::model::id::UserId;
+use serenity::prelude::*;
 
 mod commands;
-use commands::{pins::*, events::*, faqs::*, luckymon::*, luckydex::*};
+use commands::{events::*, faqs::*, luckydex::*, luckymon::*, pins::*};
 
 mod validation;
 
@@ -18,7 +20,17 @@ mod validation;
 pub struct General;
 
 #[group]
-#[commands(add_faq, edit_faq, delete_faq, add_event, edit_event, delete_event, add_pin, edit_pin, delete_pin)]
+#[commands(
+    add_faq,
+    edit_faq,
+    delete_faq,
+    add_event,
+    edit_event,
+    delete_event,
+    add_pin,
+    edit_pin,
+    delete_pin
+)]
 pub struct Admin;
 
 struct Handler;
@@ -35,7 +47,8 @@ async fn main() {
         .help(&HELP);
 
     // Login with a bot token from the environment
-    let token = env::var("DISCORD_TOKEN").expect("Unable to retrieve DISCORD_TOKEN environment variable!");
+    let token =
+        env::var("DISCORD_TOKEN").expect("Unable to retrieve DISCORD_TOKEN environment variable!");
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
     let mut client = Client::builder(token, intents)
         .event_handler(Handler)
@@ -68,4 +81,3 @@ async fn help(
     let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
 }
-
