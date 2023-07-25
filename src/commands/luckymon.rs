@@ -1,18 +1,18 @@
 use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
-use serenity::prelude::*;
-use serenity::model::channel::Message;
-use serenity::framework::standard::macros::command;
-use serenity::framework::standard::CommandResult;
-use serenity::model::Timestamp;
-use rustemon::pokemon::pokemon;
+use chrono::NaiveDate;
 use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
+use rustemon::pokemon::pokemon;
 use serde::Serialize;
 use serde_json::Value;
-use chrono::NaiveDate;
+use serenity::framework::standard::macros::command;
+use serenity::framework::standard::CommandResult;
+use serenity::model::channel::Message;
+use serenity::model::Timestamp;
+use serenity::prelude::*;
 
 #[derive(Serialize, Debug)]
 pub struct NewLuckymonHistory {
@@ -20,7 +20,7 @@ pub struct NewLuckymonHistory {
     pub date_obtained: NaiveDate,
     pub pokemon_id: i64,
     pub shiny: bool,
-    pub pokemon_name: String
+    pub pokemon_name: String,
 }
 
 impl NewLuckymonHistory {
@@ -29,9 +29,15 @@ impl NewLuckymonHistory {
         date_obtained: NaiveDate,
         pokemon_id: i64,
         shiny: bool,
-        pokemon_name: &String
+        pokemon_name: &String,
     ) -> Self {
-        NewLuckymonHistory {user_id, date_obtained, pokemon_id, shiny, pokemon_name: pokemon_name.to_string()}
+        NewLuckymonHistory {
+            user_id,
+            date_obtained,
+            pokemon_id,
+            shiny,
+            pokemon_name: pokemon_name.to_string(),
+        }
     }
 }
 
@@ -66,15 +72,14 @@ fn is_nidoran(name: &str) -> bool {
 }
 
 fn is_paradox(name: &str) -> bool {
-    return name.starts_with("iron-") 
-        || name.starts_with("scream-") 
-        || name.starts_with("slither-") 
-        || name.starts_with("brute-") 
-        || name.starts_with("great-") 
-        || name.starts_with("flutter-") 
+    return name.starts_with("iron-")
+        || name.starts_with("scream-")
+        || name.starts_with("slither-")
+        || name.starts_with("brute-")
+        || name.starts_with("great-")
+        || name.starts_with("flutter-")
         || name.starts_with("sandy-");
 }
-
 
 fn format_for_display(name: &str) -> String {
     // this includes pokemon with hyphenated names as well as pokemon who have spaces in their names
@@ -117,7 +122,6 @@ fn format_for_display(name: &str) -> String {
     return capitalize(name).to_string();
 }
 
-
 fn format_for_bulba(name: &str) -> String {
     if has_hyphen(name) {
         // nidoran male and female need encoding
@@ -136,7 +140,7 @@ fn format_for_bulba(name: &str) -> String {
         if name.ends_with("-mime") {
             return "Mr._Mime".to_string();
         }
-        
+
         if name.eq("type-null") {
             return "Type:_Null".to_string();
         }
@@ -163,8 +167,8 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let pokedex_max_num = 1010;
     let one_in_x_shiny_chance = 400; // 1/400 chance to get a shiny
     let user_hash = calculate_hash(&user_id, &today);
-    let lucky_num = user_hash % pokedex_max_num + 1; 
-    let shiny_num = (user_hash >> 10) % one_in_x_shiny_chance + 1; 
+    let lucky_num = user_hash % pokedex_max_num + 1;
+    let shiny_num = (user_hash >> 10) % one_in_x_shiny_chance + 1;
 
     let mut is_shiny = false;
     if shiny_num == 1 {
@@ -173,9 +177,15 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
 
     let daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
 
-    println!("User ID {} ran luckymon command!: Got number {} and shiny {}", user_id, daily_pair.0, daily_pair.1);
+    println!(
+        "User ID {} ran luckymon command!: Got number {} and shiny {}",
+        user_id, daily_pair.0, daily_pair.1
+    );
     println!("user_hash: {}", user_hash);
-    println!("Luckymon daily_pair: {} - {} - {:?}", daily_pair.0, daily_pair.1, today);
+    println!(
+        "Luckymon daily_pair: {} - {} - {:?}",
+        daily_pair.0, daily_pair.1, today
+    );
 
     let rustemon_client = RustemonClient::default();
     let lucky_pokemon: Pokemon = pokemon::get_by_id(daily_pair.0, &rustemon_client).await?;
@@ -188,7 +198,13 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
 
     let mut sprite = regular_sprite;
 
-    let new = NewLuckymonHistory::new(i64::from(user_id), today, daily_pair.0, daily_pair.1, &display_name);
+    let new = NewLuckymonHistory::new(
+        i64::from(user_id),
+        today,
+        daily_pair.0,
+        daily_pair.1,
+        &display_name,
+    );
 
     if daily_pair.1 {
         if let Some(shiny_sprite) = lucky_pokemon.sprites.front_shiny {
@@ -197,9 +213,13 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         }
     }
 
-    println!("Sending new LuckymonHistory creation request with {:?}", new);
+    println!(
+        "Sending new LuckymonHistory creation request with {:?}",
+        new
+    );
     let client = reqwest::Client::new();
-    let _resp = client.post("http://localhost:8000/api/v1/luckymon-history")
+    let _resp = client
+        .post("http://localhost:8000/api/v1/luckymon-history")
         .json(&new)
         .send()
         .await?
@@ -226,4 +246,3 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Finished processing luckymon command!");
     Ok(())
 }
-

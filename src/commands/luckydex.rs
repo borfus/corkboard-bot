@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use serenity::prelude::*;
-use serenity::model::channel::Message;
+use serenity::builder::{CreateActionRow, CreateComponents};
 use serenity::framework::standard::macros::command;
 use serenity::framework::standard::CommandResult;
-use serenity::model::Timestamp;
-use serenity::utils::Colour;
 use serenity::model::application::component::ButtonStyle;
-use serenity::builder::{CreateActionRow, CreateComponents};
 use serenity::model::application::interaction::InteractionResponseType;
+use serenity::model::channel::Message;
+use serenity::model::Timestamp;
+use serenity::prelude::*;
+use serenity::utils::Colour;
 
-use serde::{Serialize, Deserialize};
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-use chrono::NaiveDate;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LuckymonHistory {
@@ -23,7 +23,7 @@ pub struct LuckymonHistory {
     pub date_obtained: NaiveDate,
     pub pokemon_id: i64,
     pub shiny: bool,
-    pub pokemon_name: String
+    pub pokemon_name: String,
 }
 
 impl LuckymonHistory {
@@ -33,7 +33,7 @@ impl LuckymonHistory {
         date_obtained: &str,
         pokemon_id: i64,
         shiny: bool,
-        pokemon_name: String
+        pokemon_name: String,
     ) -> Self {
         let id = Uuid::parse_str(id).expect("Bad UUID");
 
@@ -41,7 +41,14 @@ impl LuckymonHistory {
         let date_obtained = NaiveDate::parse_from_str(date_obtained, fmt)
             .expect("Unable to parse date_obtained NaiveDate for LuckymonHistory.");
 
-        LuckymonHistory {id, user_id, date_obtained, pokemon_id, shiny, pokemon_name}
+        LuckymonHistory {
+            id,
+            user_id,
+            date_obtained,
+            pokemon_id,
+            shiny,
+            pokemon_name,
+        }
     }
 
     pub fn to_hist(hist_map: HashMap<String, Value>) -> Self {
@@ -51,7 +58,12 @@ impl LuckymonHistory {
             hist_map.get("date_obtained").unwrap().as_str().unwrap(),
             hist_map.get("pokemon_id").unwrap().as_i64().unwrap(),
             hist_map.get("shiny").unwrap().as_bool().unwrap(),
-            hist_map.get("pokemon_name").unwrap().as_str().unwrap().to_string()
+            hist_map
+                .get("pokemon_name")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
         )
     }
 }
@@ -60,10 +72,13 @@ impl LuckymonHistory {
 #[description = "Retrieves Luckymon History for a User."]
 async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got luckydex command..");
-    let resp = reqwest::get(format!("http://localhost:8000/api/v1/luckymon-history/user-id/{}", i64::from(msg.author.id)))
-        .await?
-        .json::<Vec<HashMap<String, Value>>>()
-        .await?;
+    let resp = reqwest::get(format!(
+        "http://localhost:8000/api/v1/luckymon-history/user-id/{}",
+        i64::from(msg.author.id)
+    ))
+    .await?
+    .json::<Vec<HashMap<String, Value>>>()
+    .await?;
     let mut hists: Vec<LuckymonHistory> = Vec::new();
     for hist_map in resp {
         hists.push(LuckymonHistory::to_hist(hist_map));
@@ -76,9 +91,9 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     let mut message = create_embed_page(ctx, msg, &hists, items_per_page, current_page).await?;
 
     while let Some(interaction) = message
-            .await_component_interaction(&ctx)
-            .timeout(Duration::from_secs(120))
-            .await
+        .await_component_interaction(&ctx)
+        .timeout(Duration::from_secs(120))
+        .await
     {
         if interaction.user.id != msg.author.id {
             interaction
@@ -101,7 +116,15 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
             current_page += 1;
         }
 
-        message = update_embed_page(ctx, &mut message, &hists, items_per_page, current_page, &msg).await?;
+        message = update_embed_page(
+            ctx,
+            &mut message,
+            &hists,
+            items_per_page,
+            current_page,
+            &msg,
+        )
+        .await?;
 
         interaction
             .create_interaction_response(&ctx.http, |r| {
@@ -142,9 +165,15 @@ async fn create_embed_page(
         }
 
         if !hist.shiny {
-            pokemon_entry.push(format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date));
+            pokemon_entry.push(format!(
+                "`{:<10} {:<17} {:<22}`",
+                pokedex_number, name, date
+            ));
         } else {
-            pokemon_entry.push(format!("`{:<10} {:<14} {:<22}`", pokedex_number, name, date));
+            pokemon_entry.push(format!(
+                "`{:<10} {:<14} {:<22}`",
+                pokedex_number, name, date
+            ));
         }
     }
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
@@ -167,7 +196,9 @@ async fn create_embed_page(
         })
         .clone();
 
-    let components = CreateComponents::default().add_action_row(action_row).clone();
+    let components = CreateComponents::default()
+        .add_action_row(action_row)
+        .clone();
 
     msg.channel_id
         .send_message(&ctx.http, |m| {
@@ -175,20 +206,22 @@ async fn create_embed_page(
                 e.title("Luckydex")
                     .color(Colour::from_rgb(0, 255, 255))
                     .footer(|f| {
-                        f.text(
-                            format!(
-                                "{}: Page {} of {}",
-                                &msg.author.name,
-                                current_page + 1,
-                                total_pages
-                            )
-                        );
+                        f.text(format!(
+                            "{}: Page {} of {}",
+                            &msg.author.name,
+                            current_page + 1,
+                            total_pages
+                        ));
                         f.icon_url(&msg.author.avatar_url().unwrap())
                     });
 
                 e.field(
                     "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
-                    pokemon_entry.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
+                    pokemon_entry
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>()
+                        .join("\n"),
                     true,
                 );
 
@@ -207,7 +240,7 @@ async fn update_embed_page(
     data: &[LuckymonHistory],
     items_per_page: usize,
     current_page: usize,
-    original_owner: &Message
+    original_owner: &Message,
 ) -> serenity::Result<Message> {
     let start_index = current_page * items_per_page;
     let end_index = usize::min(start_index + items_per_page, data.len());
@@ -226,9 +259,15 @@ async fn update_embed_page(
         }
 
         if !hist.shiny {
-            pokemon_entry.push(format!("`{:<10} {:<17} {:<22}`", pokedex_number, name, date));
+            pokemon_entry.push(format!(
+                "`{:<10} {:<17} {:<22}`",
+                pokedex_number, name, date
+            ));
         } else {
-            pokemon_entry.push(format!("`{:<10} {:<14} {:<22}`", pokedex_number, name, date));
+            pokemon_entry.push(format!(
+                "`{:<10} {:<14} {:<22}`",
+                pokedex_number, name, date
+            ));
         }
     }
 
@@ -255,37 +294,40 @@ async fn update_embed_page(
         })
         .clone();
 
-    let components = CreateComponents::default().add_action_row(action_row).clone();
+    let components = CreateComponents::default()
+        .add_action_row(action_row)
+        .clone();
 
     msg.channel_id
         .edit_message(&ctx.http, msg.id, |m| {
-        m.embed(|e| {
-            e.title("Luckydex")
-                .color(Colour::from_rgb(0, 255, 255))
-                .footer(|f| {
-                    f.text(
-                        format!(
+            m.embed(|e| {
+                e.title("Luckydex")
+                    .color(Colour::from_rgb(0, 255, 255))
+                    .footer(|f| {
+                        f.text(format!(
                             "{}: Page {} of {}",
                             author_name,
                             current_page + 1,
                             total_pages
-                        )
-                    );
-                    f.icon_url(avatar_url)
-                });
+                        ));
+                        f.icon_url(avatar_url)
+                    });
 
-            e.field(
-                "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
-                pokemon_entry.iter().map(|s| s.to_string()).collect::<Vec<String>>().join("\n"),
-                true,
-            );
+                e.field(
+                    "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
+                    pokemon_entry
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>()
+                        .join("\n"),
+                    true,
+                );
 
-            e.timestamp(Timestamp::now());
+                e.timestamp(Timestamp::now());
 
-            e
-        });
-        m.set_components(components.clone())
-    })
-    .await
+                e
+            });
+            m.set_components(components.clone())
+        })
+        .await
 }
-
