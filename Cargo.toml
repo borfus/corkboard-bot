@@ -8,10 +8,15 @@ edition = "2021"
 [dependencies]
 serenity = { version = "0.11.5", features = ["model", "collector"] }
 tokio = { version = "1.21.2", features = ["full", "macros", "rt-multi-thread"] }
-reqwest = { version = "0.11.13", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+reqwest = { version = "0.11.13", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "blocking",
+] }
 serde = "1.0.149"
 serde_json = "1.0.89"
 chrono = "0.4.23"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 rustemon = "3.0.1"
-
+image = "0.24.6"
+rusttype = "0.9.3"
