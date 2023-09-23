@@ -84,7 +84,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
         hists.push(LuckymonHistory::to_hist(hist_map));
     }
 
-    let items_per_page = 10;
+    let items_per_page = 9;
     let total_pages = (hists.len() as f64 / items_per_page as f64).ceil() as usize;
     let mut current_page = 0;
 

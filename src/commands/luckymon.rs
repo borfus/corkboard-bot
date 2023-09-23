@@ -184,7 +184,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         is_shiny = true;
     }
 
-    let daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
+    let mut daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
 
     println!(
         "User ID {} ran luckymon command!: Got number {} and shiny {}",
@@ -219,6 +219,10 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         if let Some(shiny_sprite) = lucky_pokemon.sprites.front_shiny {
             final_name = format!("✨ Shiny {} ✨", final_name);
             sprite = shiny_sprite;
+        } else {
+            // The shiny sprite for this pokemon doesn't exist yet,
+            // so sadly we turn this user's shiny bool back to false
+            daily_pair.1 = false;
         }
     }
 
