@@ -151,6 +151,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+#[allow(deprecated)]
 async fn create_embed_page(
     ctx: &Context,
     msg: &Message,
@@ -228,6 +229,7 @@ async fn create_embed_page(
         .await
 }
 
+#[allow(deprecated)]
 async fn update_embed_page(
     ctx: &Context,
     msg: &mut Message,
