@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::time::Duration;
 
 use serenity::builder::{CreateActionRow, CreateComponents};
@@ -7,14 +8,15 @@ use serenity::framework::standard::CommandResult;
 use serenity::model::application::component::ButtonStyle;
 use serenity::model::application::interaction::InteractionResponseType;
 use serenity::model::channel::Message;
+use serenity::model::prelude::AttachmentType;
 use serenity::model::Timestamp;
 use serenity::prelude::*;
 use serenity::utils::Colour;
 
 use chrono::NaiveDate;
+use image::codecs::png::PngEncoder;
 use image::{imageops, ImageBuffer, Rgba};
 use imageproc::drawing::draw_text_mut;
-use imageproc::rect::Rect;
 use rand::Rng;
 use rusttype::{point, Font, PositionedGlyph, Scale};
 use serde::{Deserialize, Serialize};
@@ -77,7 +79,6 @@ impl LuckymonHistory {
 #[description = "Retrieves Luckymon History for a User."]
 async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got luckydex command..");
-    create_page_image();
     let resp = reqwest::get(format!(
         "http://localhost:8000/api/v1/luckymon-history/user-id/{}",
         i64::from(msg.author.id)
@@ -158,30 +159,8 @@ async fn create_embed_page(
     let end_index = usize::min(start_index + items_per_page, data.len());
 
     let current_data = &data[start_index..end_index];
+    let luckydex_page = create_page_image(current_data);
 
-    let mut pokemon_entry = Vec::new();
-
-    for hist in current_data {
-        let pokedex_number = hist.pokemon_id;
-        let date = hist.date_obtained;
-
-        let mut name = hist.pokemon_name.clone();
-        if hist.shiny {
-            name = format!("✨{}✨", hist.pokemon_name.clone())
-        }
-
-        if !hist.shiny {
-            pokemon_entry.push(format!(
-                "`{:<10} {:<17} {:<22}`",
-                pokedex_number, name, date
-            ));
-        } else {
-            pokemon_entry.push(format!(
-                "`{:<10} {:<14} {:<22}`",
-                pokedex_number, name, date
-            ));
-        }
-    }
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
     if total_pages == 0 {
         total_pages = 1;
@@ -210,6 +189,7 @@ async fn create_embed_page(
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
                 e.title("Luckydex")
+                    .image("attachment://image.png")
                     .color(Colour::from_rgb(0, 255, 255))
                     .footer(|f| {
                         f.text(format!(
@@ -221,19 +201,27 @@ async fn create_embed_page(
                         f.icon_url(&msg.author.avatar_url().unwrap())
                     });
 
-                e.field(
-                    "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
-                    pokemon_entry
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>()
-                        .join("\n"),
-                    true,
-                );
-
                 e.timestamp(Timestamp::now());
 
                 e
+            });
+            let mut buffer: Vec<u8> = Vec::new();
+            {
+                let mut writer = Cursor::new(&mut buffer);
+                let encoder = PngEncoder::new(&mut writer);
+                encoder
+                    .encode(
+                        &luckydex_page,
+                        luckydex_page.width(),
+                        luckydex_page.height(),
+                        image::ColorType::Rgba8,
+                    )
+                    .expect("Error encoding image");
+            }
+
+            m.add_file(AttachmentType::Bytes {
+                data: buffer.into(),
+                filename: "image.png".into(),
             });
             m.set_components(components.clone())
         })
@@ -338,7 +326,7 @@ async fn update_embed_page(
         .await
 }
 
-fn create_page_image() -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+fn create_page_image(data: &[LuckymonHistory]) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
     let bg_root_path = "./resources/luckydex/";
     let sprite_root_path = "./resources/sprites/";
     let bg_dimensions = 500; // all backgrounds are 500x500
@@ -383,12 +371,29 @@ fn create_page_image() -> ImageBuffer<Rgba<u8>, Vec<u8>> {
         y: font_height,
     };
 
+    let pokemon_count = data.len();
     for row in 0..grid_dimensions {
         for col in 0..grid_dimensions {
-            let random_pokemon = rand::thread_rng().gen_range(1..=1010);
-            let pokemon = image::open(format!("{}{}.png", sprite_root_path, random_pokemon))
+            let current_pokemon = col + (row * grid_dimensions);
+            if current_pokemon >= pokemon_count.try_into().unwrap() {
+                return img;
+            }
+
+            let pokemon_data: &LuckymonHistory = &data[current_pokemon as usize];
+            let mut pokemon_sprite = image::open(format!(
+                "{}{}.png",
+                sprite_root_path, &pokemon_data.pokemon_id
+            ))
+            .unwrap()
+            .to_rgba8();
+            if pokemon_data.shiny {
+                pokemon_sprite = image::open(format!(
+                    "{}{}_shiny.png",
+                    sprite_root_path, &pokemon_data.pokemon_id
+                ))
                 .unwrap()
                 .to_rgba8();
+            }
 
             let x: i64 = (((col * (sprite_dimensions + sprite_spacing)) + sprite_dimensions)
                 - x_spacing_buffer)
@@ -396,12 +401,16 @@ fn create_page_image() -> ImageBuffer<Rgba<u8>, Vec<u8>> {
             let y: i64 = (((row * (sprite_dimensions + sprite_spacing)) + sprite_dimensions)
                 - y_spacing_buffer)
                 .into();
-            imageops::overlay(&mut img, &pokemon, x, y);
+            imageops::overlay(&mut img, &pokemon_sprite, x, y);
 
-            let texts = vec!["Pokemon Name", "1234", "09/01/23"];
+            let texts = vec![
+                pokemon_data.pokemon_name.clone(),
+                format!("Pokédex #: {}", pokemon_data.pokemon_id),
+                pokemon_data.date_obtained.to_string(),
+            ];
             let mut text_spacing = 8;
             for text in texts {
-                let text_width = text_width(&font, font_scale, text);
+                let text_width = text_width(&font, font_scale, text.as_str());
                 let text_x = x + ((sprite_dimensions as f32 - text_width) / 2.0).round() as i64;
                 let text_y = y + sprite_dimensions as i64 + text_spacing as i64;
                 draw_text_mut(
@@ -411,14 +420,12 @@ fn create_page_image() -> ImageBuffer<Rgba<u8>, Vec<u8>> {
                     text_y.try_into().unwrap(),
                     font_scale,
                     &font,
-                    text,
+                    text.as_str(),
                 );
                 text_spacing = text_spacing + 15;
             }
         }
     }
-
-    img.save("test_image.png").unwrap();
 
     return img;
 }
@@ -428,7 +435,7 @@ fn get_font<'a>() -> Font<'a> {
     return Font::try_from_bytes(font_data).unwrap();
 }
 
-// Ultimately used to center the text that is written over the generated image
+// Ultimately used to center the text that is written over the generated page image
 fn text_width(font: &Font, scale: Scale, text: &str) -> f32 {
     let v_metrics = font.v_metrics(scale);
     let glyphs: Vec<PositionedGlyph<'_>> = font
