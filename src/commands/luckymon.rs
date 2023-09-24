@@ -91,7 +91,7 @@ fn is_paradox(name: &str) -> bool {
         || name.starts_with("sandy-");
 }
 
-fn format_for_display(name: &str) -> String {
+pub fn format_for_display(name: &str) -> String {
     // this includes pokemon with hyphenated names as well as pokemon who have spaces in their names
     if has_hyphen(name) {
         if is_nidoran(name) {
