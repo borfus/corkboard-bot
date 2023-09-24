@@ -62,7 +62,7 @@ async fn main() {
         .await
         .expect("Error creating client");
 
-    let _ = luckymon::initialize().await;
+    // let _ = luckymon::initialize().await;
 
     // start listening for events by starting a single shard
     if let Err(why) = client.start().await {

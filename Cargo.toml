@@ -19,4 +19,6 @@ chrono = "0.4.23"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 rustemon = "3.0.1"
 image = "0.24.6"
+imageproc = "0.23.0"
 rusttype = "0.9.3"
+rand = "0.8.5"

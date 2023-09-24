@@ -12,6 +12,11 @@ use serenity::prelude::*;
 use serenity::utils::Colour;
 
 use chrono::NaiveDate;
+use image::{imageops, ImageBuffer, Rgba};
+use imageproc::drawing::draw_text_mut;
+use imageproc::rect::Rect;
+use rand::Rng;
+use rusttype::{point, Font, PositionedGlyph, Scale};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -72,6 +77,7 @@ impl LuckymonHistory {
 #[description = "Retrieves Luckymon History for a User."]
 async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     println!("Got luckydex command..");
+    create_page_image();
     let resp = reqwest::get(format!(
         "http://localhost:8000/api/v1/luckymon-history/user-id/{}",
         i64::from(msg.author.id)
@@ -330,4 +336,109 @@ async fn update_embed_page(
             m.set_components(components.clone())
         })
         .await
+}
+
+fn create_page_image() -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    let bg_root_path = "./resources/luckydex/";
+    let sprite_root_path = "./resources/sprites/";
+    let bg_dimensions = 500; // all backgrounds are 500x500
+    let sprite_dimensions = 96; // all sprites are 96x96
+    let grid_dimensions = 3; // 3 rows and 3 columns per page
+    let background_filename = format!("bg{}.png", rand::thread_rng().gen_range(1..=20)); // 1 - 20
+
+    let y_spacing_buffer = sprite_dimensions - 10;
+    let x_spacing_buffer = ((bg_dimensions / grid_dimensions) / 2) - 23;
+
+    // Calculate spacing
+    let sprite_spacing = (bg_dimensions - (grid_dimensions * sprite_dimensions)) / grid_dimensions;
+
+    let mut img = ImageBuffer::new(bg_dimensions, bg_dimensions);
+    let background = image::open(format!("{}{}", bg_root_path, background_filename))
+        .unwrap()
+        .to_rgba8();
+
+    imageops::overlay(&mut img, &background, 0, 0);
+
+    // Draw horizontal grid lines
+    for i in 1..grid_dimensions {
+        let y = (bg_dimensions / grid_dimensions) * i;
+        for x in 0..bg_dimensions {
+            img.put_pixel(x, y, Rgba([0, 0, 0, 255]));
+        }
+    }
+
+    // Draw vertical grid lines
+    for i in 1..grid_dimensions {
+        let x = (bg_dimensions / grid_dimensions) * i;
+        for y in 0..bg_dimensions {
+            img.put_pixel(x, y, Rgba([0, 0, 0, 255]));
+        }
+    }
+
+    let font = get_font();
+
+    let font_height: f32 = 14.0; // Set the font size
+    let font_scale = Scale {
+        x: font_height,
+        y: font_height,
+    };
+
+    for row in 0..grid_dimensions {
+        for col in 0..grid_dimensions {
+            let random_pokemon = rand::thread_rng().gen_range(1..=1010);
+            let pokemon = image::open(format!("{}{}.png", sprite_root_path, random_pokemon))
+                .unwrap()
+                .to_rgba8();
+
+            let x: i64 = (((col * (sprite_dimensions + sprite_spacing)) + sprite_dimensions)
+                - x_spacing_buffer)
+                .into();
+            let y: i64 = (((row * (sprite_dimensions + sprite_spacing)) + sprite_dimensions)
+                - y_spacing_buffer)
+                .into();
+            imageops::overlay(&mut img, &pokemon, x, y);
+
+            let texts = vec!["Pokemon Name", "1234", "09/01/23"];
+            let mut text_spacing = 8;
+            for text in texts {
+                let text_width = text_width(&font, font_scale, text);
+                let text_x = x + ((sprite_dimensions as f32 - text_width) / 2.0).round() as i64;
+                let text_y = y + sprite_dimensions as i64 + text_spacing as i64;
+                draw_text_mut(
+                    &mut img,
+                    Rgba([0, 0, 0, 255]),
+                    text_x.try_into().unwrap(),
+                    text_y.try_into().unwrap(),
+                    font_scale,
+                    &font,
+                    text,
+                );
+                text_spacing = text_spacing + 15;
+            }
+        }
+    }
+
+    img.save("test_image.png").unwrap();
+
+    return img;
+}
+
+fn get_font<'a>() -> Font<'a> {
+    let font_data: &[u8] = include_bytes!("../../resources/fonts/DejaVuSans.ttf");
+    return Font::try_from_bytes(font_data).unwrap();
+}
+
+// Ultimately used to center the text that is written over the generated image
+fn text_width(font: &Font, scale: Scale, text: &str) -> f32 {
+    let v_metrics = font.v_metrics(scale);
+    let glyphs: Vec<PositionedGlyph<'_>> = font
+        .layout(text, scale, point(0.0, v_metrics.ascent))
+        .collect();
+    let width = glyphs
+        .iter()
+        .rev()
+        .map(|g| g.position().x as f32 + g.unpositioned().h_metrics().advance_width)
+        .next()
+        .unwrap_or(0.0);
+    width
 }
