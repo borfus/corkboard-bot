@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::time::Duration;
 
 use serenity::builder::{CreateActionRow, CreateComponents};
@@ -7,14 +8,23 @@ use serenity::framework::standard::CommandResult;
 use serenity::model::application::component::ButtonStyle;
 use serenity::model::application::interaction::InteractionResponseType;
 use serenity::model::channel::Message;
+use serenity::model::prelude::AttachmentType;
+use serenity::model::prelude::*;
 use serenity::model::Timestamp;
 use serenity::prelude::*;
 use serenity::utils::Colour;
 
 use chrono::NaiveDate;
+use image::codecs::png::PngEncoder;
+use image::{imageops, ImageBuffer, Rgba};
+use imageproc::drawing::draw_text_mut;
+use rand::Rng;
+use rusttype::{point, Font, PositionedGlyph, Scale};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
+
+use super::luckymon;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LuckymonHistory {
@@ -84,7 +94,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
         hists.push(LuckymonHistory::to_hist(hist_map));
     }
 
-    let items_per_page = 10;
+    let items_per_page = 9;
     let total_pages = (hists.len() as f64 / items_per_page as f64).ceil() as usize;
     let mut current_page = 0;
 
@@ -141,6 +151,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+#[allow(deprecated)]
 async fn create_embed_page(
     ctx: &Context,
     msg: &Message,
@@ -152,30 +163,8 @@ async fn create_embed_page(
     let end_index = usize::min(start_index + items_per_page, data.len());
 
     let current_data = &data[start_index..end_index];
+    let luckydex_page = create_page_image(current_data);
 
-    let mut pokemon_entry = Vec::new();
-
-    for hist in current_data {
-        let pokedex_number = hist.pokemon_id;
-        let date = hist.date_obtained;
-
-        let mut name = hist.pokemon_name.clone();
-        if hist.shiny {
-            name = format!("✨{}✨", hist.pokemon_name.clone())
-        }
-
-        if !hist.shiny {
-            pokemon_entry.push(format!(
-                "`{:<10} {:<17} {:<22}`",
-                pokedex_number, name, date
-            ));
-        } else {
-            pokemon_entry.push(format!(
-                "`{:<10} {:<14} {:<22}`",
-                pokedex_number, name, date
-            ));
-        }
-    }
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
     if total_pages == 0 {
         total_pages = 1;
@@ -200,10 +189,27 @@ async fn create_embed_page(
         .add_action_row(action_row)
         .clone();
 
+    let mut buffer: Vec<u8> = Vec::new();
+    {
+        let mut writer = Cursor::new(&mut buffer);
+        let encoder = PngEncoder::new(&mut writer);
+        encoder
+            .encode(
+                &luckydex_page,
+                luckydex_page.width(),
+                luckydex_page.height(),
+                image::ColorType::Rgba8,
+            )
+            .expect("Error encoding image");
+    }
+
+    let image_url = send_dummy_message(&ctx, &buffer).await;
+
     msg.channel_id
         .send_message(&ctx.http, |m| {
             m.embed(|e| {
                 e.title("Luckydex")
+                    .image("attachment://image.png")
                     .color(Colour::from_rgb(0, 255, 255))
                     .footer(|f| {
                         f.text(format!(
@@ -214,19 +220,8 @@ async fn create_embed_page(
                         ));
                         f.icon_url(&msg.author.avatar_url().unwrap())
                     });
-
-                e.field(
-                    "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
-                    pokemon_entry
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>()
-                        .join("\n"),
-                    true,
-                );
-
+                e.image(image_url);
                 e.timestamp(Timestamp::now());
-
                 e
             });
             m.set_components(components.clone())
@@ -234,6 +229,7 @@ async fn create_embed_page(
         .await
 }
 
+#[allow(deprecated)]
 async fn update_embed_page(
     ctx: &Context,
     msg: &mut Message,
@@ -246,30 +242,7 @@ async fn update_embed_page(
     let end_index = usize::min(start_index + items_per_page, data.len());
 
     let current_data = &data[start_index..end_index];
-
-    let mut pokemon_entry = Vec::new();
-
-    for hist in current_data {
-        let pokedex_number = hist.pokemon_id;
-        let date = hist.date_obtained;
-
-        let mut name = hist.pokemon_name.clone();
-        if hist.shiny {
-            name = format!("✨{}✨", hist.pokemon_name.clone())
-        }
-
-        if !hist.shiny {
-            pokemon_entry.push(format!(
-                "`{:<10} {:<17} {:<22}`",
-                pokedex_number, name, date
-            ));
-        } else {
-            pokemon_entry.push(format!(
-                "`{:<10} {:<14} {:<22}`",
-                pokedex_number, name, date
-            ));
-        }
-    }
+    let luckydex_page = create_page_image(current_data);
 
     let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
     if total_pages == 0 {
@@ -298,6 +271,22 @@ async fn update_embed_page(
         .add_action_row(action_row)
         .clone();
 
+    let mut buffer: Vec<u8> = Vec::new();
+    {
+        let mut writer = Cursor::new(&mut buffer);
+        let encoder = PngEncoder::new(&mut writer);
+        encoder
+            .encode(
+                &luckydex_page,
+                luckydex_page.width(),
+                luckydex_page.height(),
+                image::ColorType::Rgba8,
+            )
+            .expect("Error encoding image");
+    }
+
+    let image_url = send_dummy_message(&ctx, &buffer).await;
+
     msg.channel_id
         .edit_message(&ctx.http, msg.id, |m| {
             m.embed(|e| {
@@ -312,22 +301,174 @@ async fn update_embed_page(
                         ));
                         f.icon_url(avatar_url)
                     });
-
-                e.field(
-                    "Pokédex #   Pokémon's Name   Obtained (YYYY-MM-DD)",
-                    pokemon_entry
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>()
-                        .join("\n"),
-                    true,
-                );
-
+                e.image(image_url);
                 e.timestamp(Timestamp::now());
-
                 e
             });
             m.set_components(components.clone())
         })
         .await
+}
+
+fn create_page_image(data: &[LuckymonHistory]) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    let bg_root_path = "./resources/luckydex/";
+    let sprite_root_path = "./resources/sprites/";
+    let bg_dimensions = 500; // all backgrounds are 500x500
+    let sprite_dimensions = 96; // all sprites are 96x96
+    let grid_dimensions = 3; // 3 rows and 3 columns per page
+    let background_filename = format!("bg{}.png", rand::thread_rng().gen_range(1..=20)); // 1 - 20
+
+    let y_spacing_buffer = sprite_dimensions - 10;
+    let x_spacing_buffer = ((bg_dimensions / grid_dimensions) / 2) - 23;
+
+    // Calculate spacing
+    let sprite_spacing = (bg_dimensions - (grid_dimensions * sprite_dimensions)) / grid_dimensions;
+
+    let mut img = ImageBuffer::new(bg_dimensions, bg_dimensions);
+    let background = image::open(format!("{}{}", bg_root_path, background_filename))
+        .unwrap()
+        .to_rgba8();
+
+    imageops::overlay(&mut img, &background, 0, 0);
+
+    // Draw horizontal grid lines
+    for i in 1..grid_dimensions {
+        let y = (bg_dimensions / grid_dimensions) * i;
+        for x in 0..bg_dimensions {
+            img.put_pixel(x, y, Rgba([0, 0, 0, 255]));
+        }
+    }
+
+    // Draw vertical grid lines
+    for i in 1..grid_dimensions {
+        let x = (bg_dimensions / grid_dimensions) * i;
+        for y in 0..bg_dimensions {
+            img.put_pixel(x, y, Rgba([0, 0, 0, 255]));
+        }
+    }
+
+    let font = get_font();
+
+    let font_height: f32 = 14.0; // Set the font size
+    let font_scale = Scale {
+        x: font_height,
+        y: font_height,
+    };
+
+    let pokemon_count = data.len();
+    for row in 0..grid_dimensions {
+        for col in 0..grid_dimensions {
+            let current_pokemon = col + (row * grid_dimensions);
+            if current_pokemon >= pokemon_count.try_into().unwrap() {
+                return img;
+            }
+
+            let pokemon_data: &LuckymonHistory = &data[current_pokemon as usize];
+            let mut pokemon_sprite = image::open(format!(
+                "{}{}.png",
+                sprite_root_path, &pokemon_data.pokemon_id
+            ))
+            .unwrap()
+            .to_rgba8();
+
+            let mut pokemon_name = luckymon::format_for_display(pokemon_data.pokemon_name.as_str());
+
+            if pokemon_data.shiny {
+                pokemon_sprite = image::open(format!(
+                    "{}{}_shiny.png",
+                    sprite_root_path, &pokemon_data.pokemon_id
+                ))
+                .unwrap()
+                .to_rgba8();
+
+                pokemon_name = format!("✧˖° Shiny {} °˖✧", pokemon_name);
+            } else {
+            }
+
+            let x: i64 = (((col * (sprite_dimensions + sprite_spacing)) + sprite_dimensions)
+                - x_spacing_buffer)
+                .into();
+            let y: i64 = (((row * (sprite_dimensions + sprite_spacing)) + sprite_dimensions)
+                - y_spacing_buffer)
+                .into();
+            imageops::overlay(&mut img, &pokemon_sprite, x, y);
+
+            let texts = vec![
+                pokemon_name,
+                format!("Pokédex #: {}", pokemon_data.pokemon_id),
+                pokemon_data.date_obtained.to_string(),
+            ];
+            let mut text_spacing = 8;
+            for text in texts {
+                let text_width = text_width(&font, font_scale, text.as_str());
+                let text_x = x + ((sprite_dimensions as f32 - text_width) / 2.0).round() as i64;
+                let text_y = y + sprite_dimensions as i64 + text_spacing as i64;
+                draw_text_mut(
+                    &mut img,
+                    Rgba([0, 0, 0, 255]),
+                    text_x.try_into().unwrap(),
+                    text_y.try_into().unwrap(),
+                    font_scale,
+                    &font,
+                    text.as_str(),
+                );
+                text_spacing = text_spacing + 15;
+            }
+        }
+    }
+
+    return img;
+}
+
+fn get_font<'a>() -> Font<'a> {
+    let font_data: &[u8] = include_bytes!("../../resources/fonts/DejaVuSans.ttf");
+    return Font::try_from_bytes(font_data).unwrap();
+}
+
+// Ultimately used to center the text that is written over the generated page image
+fn text_width(font: &Font, scale: Scale, text: &str) -> f32 {
+    let v_metrics = font.v_metrics(scale);
+    let glyphs: Vec<PositionedGlyph<'_>> = font
+        .layout(text, scale, point(0.0, v_metrics.ascent))
+        .collect();
+    let width = glyphs
+        .iter()
+        .rev()
+        .map(|g| g.position().x as f32 + g.unpositioned().h_metrics().advance_width)
+        .next()
+        .unwrap_or(0.0);
+    width
+}
+
+async fn send_dummy_message(ctx: &Context, buffer: &Vec<u8>) -> String {
+    // Send dummy message to specific Discord server & channel to upload the image to grab the url
+    // Note: If you want to host this bot by yourself, you need to make a server with a dedicated channel
+    // that this bot can post the generated images in to properly update the embedded message with a new image
+    let channel_id: ChannelId = ChannelId(1155366534617763931);
+    let guild_id: GuildId = GuildId(423944755118866444);
+
+    let mut image_url = String::new();
+
+    // Check if the channel is in the server
+    if let Ok(channel) = channel_id.to_channel(&ctx).await {
+        if let Some(guild_channel) = channel.guild() {
+            if guild_channel.guild_id == guild_id {
+                let files = vec![AttachmentType::Bytes {
+                    data: buffer.into(),
+                    filename: "image.png".to_string(),
+                }];
+                if let Ok(sent_message) = channel_id
+                    .send_files(&ctx.http, files, |m| m.content(""))
+                    .await
+                {
+                    // Extract the URL of the uploaded image
+                    if let Some(attachment) = sent_message.attachments.first() {
+                        image_url = attachment.url.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    image_url
 }

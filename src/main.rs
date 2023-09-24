@@ -11,7 +11,13 @@ use serenity::model::id::UserId;
 use serenity::prelude::*;
 
 mod commands;
-use commands::{events::*, faqs::*, luckydex::*, luckymon::*, pins::*};
+use commands::{
+    events::*,
+    faqs::*,
+    luckydex::*,
+    luckymon::{self, *},
+    pins::*,
+};
 
 mod validation;
 
@@ -55,6 +61,8 @@ async fn main() {
         .framework(framework)
         .await
         .expect("Error creating client");
+
+    let _ = luckymon::initialize().await;
 
     // start listening for events by starting a single shard
     if let Err(why) = client.start().await {

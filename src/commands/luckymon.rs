@@ -1,6 +1,10 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::fs;
+use std::fs::File;
 use std::hash::{Hash, Hasher};
+use std::io::copy;
+use std::path::Path;
 
 use chrono::NaiveDate;
 use rustemon::client::RustemonClient;
@@ -10,9 +14,15 @@ use serde::Serialize;
 use serde_json::Value;
 use serenity::framework::standard::macros::command;
 use serenity::framework::standard::CommandResult;
+use serenity::futures::StreamExt;
 use serenity::model::channel::Message;
 use serenity::model::Timestamp;
 use serenity::prelude::*;
+
+extern crate reqwest;
+extern crate tokio;
+
+static POKEDEX_MAX_NUM: u64 = 1010;
 
 #[derive(Serialize, Debug)]
 pub struct NewLuckymonHistory {
@@ -81,7 +91,7 @@ fn is_paradox(name: &str) -> bool {
         || name.starts_with("sandy-");
 }
 
-fn format_for_display(name: &str) -> String {
+pub fn format_for_display(name: &str) -> String {
     // this includes pokemon with hyphenated names as well as pokemon who have spaces in their names
     if has_hyphen(name) {
         if is_nidoran(name) {
@@ -164,10 +174,9 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     let user_id = msg.author.id;
     let today = Timestamp::now().date_naive();
 
-    let pokedex_max_num = 1010;
     let one_in_x_shiny_chance = 400; // 1/400 chance to get a shiny
     let user_hash = calculate_hash(&user_id, &today);
-    let lucky_num = user_hash % pokedex_max_num + 1;
+    let lucky_num = user_hash % POKEDEX_MAX_NUM + 1;
     let shiny_num = (user_hash >> 10) % one_in_x_shiny_chance + 1;
 
     let mut is_shiny = false;
@@ -175,7 +184,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         is_shiny = true;
     }
 
-    let daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
+    let mut daily_pair: (i64, bool) = (lucky_num.try_into().unwrap(), is_shiny);
 
     println!(
         "User ID {} ran luckymon command!: Got number {} and shiny {}",
@@ -210,6 +219,10 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         if let Some(shiny_sprite) = lucky_pokemon.sprites.front_shiny {
             final_name = format!("✨ Shiny {} ✨", final_name);
             sprite = shiny_sprite;
+        } else {
+            // The shiny sprite for this pokemon doesn't exist yet,
+            // so sadly we turn this user's shiny bool back to false
+            daily_pair.1 = false;
         }
     }
 
@@ -245,4 +258,49 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
 
     println!("Finished processing luckymon command!");
     Ok(())
+}
+
+pub async fn initialize() {
+    println!("Begin initialization for luckymon.");
+    download_sprites().await;
+    println!("Initialization complete!");
+}
+
+pub async fn download_sprites() {
+    let path = "./resources/sprites";
+    let _ = fs::create_dir_all(path);
+    let rustemon_client = RustemonClient::default();
+
+    println!("Downloading sprites...");
+    for i in 1..=POKEDEX_MAX_NUM {
+        let pokemon: Pokemon = pokemon::get_by_id(i.try_into().unwrap(), &rustemon_client)
+            .await
+            .unwrap();
+
+        download_individual_sprite(
+            pokemon.sprites.front_default.unwrap(),
+            format!("{}/{}.png", path, i),
+        )
+        .await;
+        if let Some(shiny_url) = pokemon.sprites.front_shiny {
+            download_individual_sprite(shiny_url, format!("{}/{}_shiny.png", path, i)).await;
+        }
+    }
+    println!("Done!");
+}
+
+async fn download_individual_sprite(url: String, file_name: String) {
+    if !Path::new(&file_name).exists() {
+        let response = reqwest::get(url).await.unwrap();
+        if response.status().is_success() {
+            let mut file_shiny = File::create(Path::new(&file_name)).unwrap();
+            let mut stream = response.bytes_stream();
+            while let Some(item) = stream.next().await {
+                let chunk = item.unwrap();
+                let _ = copy(&mut chunk.as_ref(), &mut file_shiny);
+            }
+        }
+    } else {
+        println!("{} exists. Skipping.", file_name);
+    }
 }
