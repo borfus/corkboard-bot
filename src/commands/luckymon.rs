@@ -240,7 +240,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         .await?;
 
     let author_name = &msg.author.name.clone();
-    let avatar_url = &msg.author.avatar_url().unwrap().clone();
+    let avatar_url = &msg.author.avatar_url();
     let _msg = msg
         .channel_id
         .send_message(&ctx.http, |m| {
@@ -250,7 +250,10 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
                     .fields(vec!((format!("{}", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
                     .footer(|f| {
                         f.text(format!("{} - Resets 5PM PDT (12AM UTC)", author_name));
-                        f.icon_url(avatar_url)
+                        if let Some(avatar_url) = avatar_url {
+                            f.icon_url(avatar_url);
+                        } 
+                        f
                     })
             })
         })

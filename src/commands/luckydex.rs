@@ -218,7 +218,10 @@ async fn create_embed_page(
                             current_page + 1,
                             total_pages
                         ));
-                        f.icon_url(&msg.author.avatar_url().unwrap())
+                        if let Some(avatar_url) = &msg.author.avatar_url() {
+                            f.icon_url(avatar_url);
+                        }
+                        f
                     });
                 e.image(image_url);
                 e.timestamp(Timestamp::now());
@@ -250,7 +253,7 @@ async fn update_embed_page(
     }
 
     let author_name = &original_owner.author.name.clone();
-    let avatar_url = &original_owner.author.avatar_url().unwrap().clone();
+    let avatar_url = &original_owner.author.avatar_url();
 
     let action_row = CreateActionRow::default()
         .create_button(|b| {
@@ -299,7 +302,10 @@ async fn update_embed_page(
                             current_page + 1,
                             total_pages
                         ));
-                        f.icon_url(avatar_url)
+                        if let Some(avatar_url) = avatar_url {
+                            f.icon_url(avatar_url);
+                        }
+                        f
                     });
                 e.image(image_url);
                 e.timestamp(Timestamp::now());
