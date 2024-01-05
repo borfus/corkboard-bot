@@ -22,7 +22,7 @@ use serenity::prelude::*;
 extern crate reqwest;
 extern crate tokio;
 
-static POKEDEX_MAX_NUM: u64 = 1010;
+static POKEDEX_MAX_NUM: u64 = 1017;
 
 #[derive(Serialize, Debug)]
 pub struct NewLuckymonHistory {
