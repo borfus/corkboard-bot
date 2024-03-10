@@ -249,7 +249,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
                     .image(sprite)
                     .fields(vec!((format!("{}", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
                     .footer(|f| {
-                        f.text(format!("{} - Resets 4PM PDT (12AM UTC)", author_name));
+                        f.text(format!("{} - Resets 5PM PDT (12AM UTC)", author_name));
                         if let Some(avatar_url) = avatar_url {
                             f.icon_url(avatar_url);
                         } 
