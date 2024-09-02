@@ -16,13 +16,14 @@ use commands::{
     faqs::*,
     luckydex::*,
     luckymon::{self, *},
+    luckytrade::*,
     pins::*,
 };
 
 mod validation;
 
 #[group]
-#[commands(pins, events, faqs, luckymon, luckydex)]
+#[commands(pins, events, faqs, luckymon, luckydex, luckytrade)]
 pub struct General;
 
 #[group]

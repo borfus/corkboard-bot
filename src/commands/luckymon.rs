@@ -22,7 +22,7 @@ use serenity::prelude::*;
 extern crate reqwest;
 extern crate tokio;
 
-static POKEDEX_MAX_NUM: u64 = 1017;
+static POKEDEX_MAX_NUM: u64 = 1025;
 
 #[derive(Serialize, Debug)]
 pub struct NewLuckymonHistory {
@@ -31,6 +31,7 @@ pub struct NewLuckymonHistory {
     pub pokemon_id: i64,
     pub shiny: bool,
     pub pokemon_name: String,
+    pub traded: bool,
 }
 
 impl NewLuckymonHistory {
@@ -40,6 +41,7 @@ impl NewLuckymonHistory {
         pokemon_id: i64,
         shiny: bool,
         pokemon_name: &String,
+        traded: bool,
     ) -> Self {
         NewLuckymonHistory {
             user_id,
@@ -47,6 +49,7 @@ impl NewLuckymonHistory {
             pokemon_id,
             shiny,
             pokemon_name: pokemon_name.to_string(),
+            traded,
         }
     }
 }
@@ -213,6 +216,7 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         daily_pair.0,
         daily_pair.1,
         &display_name,
+        false,
     );
 
     if daily_pair.1 {

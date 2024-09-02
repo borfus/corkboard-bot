@@ -34,6 +34,7 @@ pub struct LuckymonHistory {
     pub pokemon_id: i64,
     pub shiny: bool,
     pub pokemon_name: String,
+    pub traded: bool,
 }
 
 impl LuckymonHistory {
@@ -44,6 +45,7 @@ impl LuckymonHistory {
         pokemon_id: i64,
         shiny: bool,
         pokemon_name: String,
+        traded: bool,
     ) -> Self {
         let id = Uuid::parse_str(id).expect("Bad UUID");
 
@@ -58,6 +60,7 @@ impl LuckymonHistory {
             pokemon_id,
             shiny,
             pokemon_name,
+            traded,
         }
     }
 
@@ -74,6 +77,7 @@ impl LuckymonHistory {
                 .as_str()
                 .unwrap()
                 .to_string(),
+            hist_map.get("traded").unwrap().as_bool().unwrap(),
         )
     }
 }
