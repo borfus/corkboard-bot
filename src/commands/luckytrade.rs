@@ -112,6 +112,16 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         }
     };
 
+    if caller.id == user_id {
+        msg.channel_id
+            .say(
+                &ctx.http,
+                format!("{} Error: You can't trade yourself, silly!", caller),
+            )
+            .await?;
+        return Err(CommandError::from("Tried trading themselves."));
+    }
+
     // Extract and validate the next 2 luckymon trade arguments
     let caller_luckymon = args.single::<String>()?;
     if !validate_trade_arg(&caller_luckymon) {
@@ -188,44 +198,74 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let caller_luckymon_id;
     let callee_luckymon_id;
 
-    if caller_shiny {
-        let digits: String = caller_luckymon
-            .chars()
-            .take_while(|c| c.is_digit(10))
-            .collect();
-        caller_luckymon_id = digits.parse::<i64>().unwrap();
-    } else {
-        caller_luckymon_id = caller_luckymon.parse::<i64>().unwrap();
-    }
-
-    if callee_shiny {
-        let digits: String = callee_luckymon
-            .chars()
-            .take_while(|c| c.is_digit(10))
-            .collect();
-        callee_luckymon_id = digits.parse::<i64>().unwrap();
-    } else {
-        callee_luckymon_id = callee_luckymon.parse::<i64>().unwrap();
-    }
-
     let mut hist_data = Vec::new();
 
     if caller_na {
         hist_data.push(None);
     } else {
+        if caller_shiny {
+            let digits: String = caller_luckymon
+                .chars()
+                .take_while(|c| c.is_digit(10))
+                .collect();
+            caller_luckymon_id = digits.parse::<i64>().unwrap();
+        } else {
+            caller_luckymon_id = caller_luckymon.parse::<i64>().unwrap();
+        }
+
         let caller_luckymon_hist = caller_hists
             .into_iter()
             .find(|h| h.pokemon_id == caller_luckymon_id);
-        hist_data.push(caller_luckymon_hist);
+
+        if caller_luckymon_hist.is_none() {
+            msg.channel_id
+                .say(
+                    &ctx.http,
+                    format!(
+                        "{} Error: You don't have a luckymon with ID {}!",
+                        caller, caller_luckymon
+                    ),
+                )
+                .await?;
+            return Err(CommandError::from("Caller doesn't have this luckymon."));
+        } else {
+            hist_data.push(caller_luckymon_hist);
+        }
     }
 
     if callee_na {
         hist_data.push(None);
     } else {
+        if callee_shiny {
+            let digits: String = callee_luckymon
+                .chars()
+                .take_while(|c| c.is_digit(10))
+                .collect();
+            callee_luckymon_id = digits.parse::<i64>().unwrap();
+        } else {
+            callee_luckymon_id = callee_luckymon.parse::<i64>().unwrap();
+        }
+
         let callee_luckymon_hist = callee_hists
             .into_iter()
             .find(|h| h.pokemon_id == callee_luckymon_id);
-        hist_data.push(callee_luckymon_hist);
+
+        if callee_luckymon_hist.is_none() {
+            msg.channel_id
+                .say(
+                    &ctx.http,
+                    format!(
+                        "{} Error: {} doesn't have a luckymon with ID {}!",
+                        caller,
+                        user_id.mention(),
+                        callee_luckymon
+                    ),
+                )
+                .await?;
+            return Err(CommandError::from("Callee doesn't have this luckymon."));
+        } else {
+            hist_data.push(callee_luckymon_hist);
+        }
     }
 
     let luckytrade_image = create_page_image(hist_data);
