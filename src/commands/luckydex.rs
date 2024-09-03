@@ -16,7 +16,7 @@ use serenity::utils::Colour;
 
 use chrono::NaiveDate;
 use image::codecs::png::PngEncoder;
-use image::{imageops, ImageBuffer, Rgba};
+use image::{imageops, ImageBuffer, ImageEncoder, Rgba};
 use imageproc::drawing::draw_text_mut;
 use rand::Rng;
 use rusttype::{point, Font, PositionedGlyph, Scale};
@@ -198,7 +198,7 @@ async fn create_embed_page(
         let mut writer = Cursor::new(&mut buffer);
         let encoder = PngEncoder::new(&mut writer);
         encoder
-            .encode(
+            .write_image(
                 &luckydex_page,
                 luckydex_page.width(),
                 luckydex_page.height(),
