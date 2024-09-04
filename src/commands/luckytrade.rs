@@ -10,11 +10,12 @@ use serenity::framework::standard::{Args, CommandError, CommandResult};
 use serenity::model::channel::Message;
 use serenity::model::id::UserId;
 use serenity::model::prelude::component::ButtonStyle;
-use serenity::model::prelude::AttachmentType;
+use serenity::model::prelude::{AttachmentType, InteractionResponseType};
 use serenity::prelude::*;
 use serenity::utils::parse_username;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -99,7 +100,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
     // Extract and validate the user mention
     let mention = args.single::<String>()?;
-    let user_id = match parse_username(&mention) {
+    let callee_id = match parse_username(&mention) {
         Some(id) => UserId(id),
         None => {
             msg.channel_id
@@ -112,7 +113,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         }
     };
 
-    if caller.id == user_id {
+    if caller.id == callee_id {
         msg.channel_id
             .say(
                 &ctx.http,
@@ -182,7 +183,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
     let resp = reqwest::get(format!(
         "http://localhost:8000/api/v1/luckymon-history/user-id/{}",
-        i64::from(user_id)
+        i64::from(callee_id)
     ))
     .await?
     .json::<Vec<HashMap<String, Value>>>()
@@ -257,7 +258,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                     format!(
                         "{} Error: {} doesn't have a luckymon with ID {}!",
                         caller,
-                        user_id.mention(),
+                        callee_id.mention(),
                         callee_luckymon
                     ),
                 )
@@ -294,7 +295,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         .description(format!(
             "{} has requested a trade with {}.",
             caller.mention(),
-            user_id.mention()
+            callee_id.mention()
         ))
         .field(
             "Their Offer",
@@ -314,7 +315,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         .footer(|f| f.text("Click a button to respond to the trade.")))
     .clone();
 
-    // Adding buttons for trade acceptance or decline
+    // Adding buttons for trade acceptance or cancel
     let action_row = (*CreateActionRow::default()
         .add_button(
             (*CreateButton::default()
@@ -325,15 +326,16 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         )
         .add_button(
             (*CreateButton::default()
-                .custom_id("decline_trade")
-                .label("Decline")
+                .custom_id("cancel_trade")
+                .label("Cancel")
                 .style(ButtonStyle::Danger))
             .clone(),
         ))
     .clone();
 
     // Send the embedded message with buttons
-    msg.channel_id
+    let msg = msg
+        .channel_id
         .send_message(&ctx.http, |m| {
             m.files(files)
                 .embed(|e| {
@@ -343,18 +345,56 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 })
                 .components(|c| c.add_action_row(action_row))
         })
-        .await?;
+        .await
+        .unwrap();
 
-    let resp = reqwest::get(format!(
-        "http://localhost:8000/api/v1/luckymon-history/user-id/{}",
-        i64::from(msg.author.id)
-    ))
-    .await?
-    .json::<Vec<HashMap<String, Value>>>()
-    .await?;
-    let mut hists: Vec<LuckymonHistory> = Vec::new();
-    for hist_map in resp {
-        hists.push(LuckymonHistory::to_hist(hist_map));
+    while let Some(interaction) = msg
+        .await_component_interaction(&ctx)
+        .timeout(Duration::from_secs(120))
+        .await
+    {
+        if interaction.user.id != caller.id && interaction.user.id != callee_id {
+            continue;
+        }
+
+        interaction
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(InteractionResponseType::DeferredUpdateMessage)
+            })
+            .await?;
+
+        let custom_id = &interaction.data.custom_id;
+        if custom_id == "accept_trade" && interaction.user.id == callee_id {
+            interaction
+                .edit_original_interaction_response(&ctx.http, |r| {
+                    r.embed(|e| {
+                        e.title("✅ Trade Accepted! ✅")
+                            .description(format!(
+                                "{} has accepted the trade request. 🎉",
+                                interaction.user.id.mention()
+                            ))
+                            .image(format!("attachment://image.png"))
+                    })
+                })
+                .await?;
+            break;
+        } else if custom_id == "cancel_trade"
+            && (interaction.user.id == caller.id || interaction.user.id == callee_id)
+        {
+            interaction
+                .edit_original_interaction_response(&ctx.http, |r| {
+                    r.embed(|e| {
+                        e.title("❌ Trade Cancelled! ❌")
+                            .description(format!(
+                                "{} has cancelled the trade request. 😢",
+                                interaction.user.id.mention()
+                            ))
+                            .image(format!("attachment://image.png"))
+                    })
+                })
+                .await?;
+            break;
+        }
     }
 
     Ok(())

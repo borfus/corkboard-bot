@@ -109,6 +109,7 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
         .timeout(Duration::from_secs(120))
         .await
     {
+        // Immediately intercept the interaction to prevent Discord from throwing an error
         interaction
             .create_interaction_response(&ctx.http, |r| {
                 r.kind(InteractionResponseType::DeferredUpdateMessage)
