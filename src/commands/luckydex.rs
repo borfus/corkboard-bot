@@ -95,7 +95,10 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     .await?;
     let mut hists: Vec<LuckymonHistory> = Vec::new();
     for hist_map in resp {
-        hists.push(LuckymonHistory::to_hist(hist_map));
+        let hist = LuckymonHistory::to_hist(hist_map);
+        if !hist.traded {
+            hists.push(hist);
+        }
     }
 
     let items_per_page = 25;

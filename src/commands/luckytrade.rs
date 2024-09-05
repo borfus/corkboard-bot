@@ -2,6 +2,7 @@ use chrono::NaiveDate;
 use image::codecs::png::PngEncoder;
 use image::{imageops, ImageBuffer, ImageEncoder, Rgba};
 use rand::Rng;
+use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
@@ -18,7 +19,7 @@ use std::io::Cursor;
 use std::time::Duration;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LuckymonHistory {
     pub id: Uuid,
     pub user_id: i64,
@@ -71,6 +72,36 @@ impl LuckymonHistory {
                 .to_string(),
             hist_map.get("traded").unwrap().as_bool().unwrap(),
         )
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct NewLuckymonHistory {
+    pub user_id: i64,
+    pub date_obtained: NaiveDate,
+    pub pokemon_id: i64,
+    pub shiny: bool,
+    pub pokemon_name: String,
+    pub traded: bool,
+}
+
+impl NewLuckymonHistory {
+    pub fn new(
+        user_id: i64,
+        date_obtained: NaiveDate,
+        pokemon_id: i64,
+        shiny: bool,
+        pokemon_name: &String,
+        traded: bool,
+    ) -> Self {
+        NewLuckymonHistory {
+            user_id,
+            date_obtained,
+            pokemon_id,
+            shiny,
+            pokemon_name: pokemon_name.to_string(),
+            traded,
+        }
     }
 }
 
@@ -178,7 +209,10 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     .await?;
     let mut caller_hists: Vec<LuckymonHistory> = Vec::new();
     for hist_map in resp {
-        caller_hists.push(LuckymonHistory::to_hist(hist_map));
+        let hist = LuckymonHistory::to_hist(hist_map);
+        if !hist.traded {
+            caller_hists.push(hist);
+        }
     }
 
     let resp = reqwest::get(format!(
@@ -190,7 +224,10 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     .await?;
     let mut callee_hists: Vec<LuckymonHistory> = Vec::new();
     for hist_map in resp {
-        callee_hists.push(LuckymonHistory::to_hist(hist_map));
+        let hist = LuckymonHistory::to_hist(hist_map);
+        if !hist.traded {
+            callee_hists.push(hist);
+        }
     }
 
     let caller_shiny = caller_luckymon.ends_with("s");
@@ -201,6 +238,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
     let mut hist_data = Vec::new();
 
+    let mut caller_hist_id = Uuid::new_v4();
     if caller_na {
         hist_data.push(None);
     } else {
@@ -230,10 +268,12 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?;
             return Err(CommandError::from("Caller doesn't have this luckymon."));
         } else {
+            caller_hist_id = caller_luckymon_hist.as_ref().unwrap().id;
             hist_data.push(caller_luckymon_hist);
         }
     }
 
+    let mut callee_hist_id = Uuid::new_v4();
     if callee_na {
         hist_data.push(None);
     } else {
@@ -265,7 +305,8 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                 .await?;
             return Err(CommandError::from("Callee doesn't have this luckymon."));
         } else {
-            hist_data.push(callee_luckymon_hist);
+            callee_hist_id = callee_luckymon_hist.as_ref().unwrap().id;
+            hist_data.push(callee_luckymon_hist.clone());
         }
     }
 
@@ -365,18 +406,140 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
         let custom_id = &interaction.data.custom_id;
         if custom_id == "accept_trade" && interaction.user.id == callee_id {
+            // Check to see if these luckymon history records still exist as they were
+            // when the trade request was first created. This is to prevent duping!
+            let mut caller_hist = None;
+            if !caller_na {
+                let resp = reqwest::get(format!(
+                    "http://localhost:8000/api/v1/luckymon-history/{}",
+                    caller_hist_id
+                ))
+                .await?
+                .json::<HashMap<String, Value>>()
+                .await?;
+                caller_hist = Some(LuckymonHistory::to_hist(resp));
+            }
+
+            let mut callee_hist = None;
+            if !callee_na {
+                let resp = reqwest::get(format!(
+                    "http://localhost:8000/api/v1/luckymon-history/{}",
+                    callee_hist_id
+                ))
+                .await?
+                .json::<HashMap<String, Value>>()
+                .await?;
+                callee_hist = Some(LuckymonHistory::to_hist(resp));
+            }
+
+            if (!caller_hist.is_none() && !caller_na && caller_hist.as_ref().unwrap().traded)
+                || (!callee_hist.is_none() && callee_na && callee_hist.as_ref().unwrap().traded)
+            {
+                interaction
+                    .edit_original_interaction_response(&ctx.http, |r| {
+                        r.embed(|e| {
+                            e.title("❌ Trade Aborted! ❌")
+                                .description(
+                                    "Luckymon data is outdated! Please create a new trade request.",
+                                )
+                                .image(format!("attachment://image.png"))
+                        })
+                    })
+                    .await?;
+
+                break;
+            }
+
+            if !callee_na {
+                let callee_hist = callee_hist.unwrap();
+
+                let new_caller_luckymon = NewLuckymonHistory::new(
+                    caller.id.into(),
+                    callee_hist.date_obtained,
+                    callee_hist.pokemon_id,
+                    callee_hist.shiny,
+                    &callee_hist.pokemon_name,
+                    false,
+                );
+
+                println!(
+                    "Sending new LuckymonHistory creation request via trade with {:?}",
+                    new_caller_luckymon
+                );
+                let client = reqwest::Client::new();
+                let _resp = client
+                    .post("http://localhost:8000/api/v1/luckymon-history?trade=true")
+                    .json(&new_caller_luckymon)
+                    .send()
+                    .await?
+                    .json::<HashMap<String, Value>>()
+                    .await?;
+
+                let client = reqwest::Client::new();
+                let _resp = client
+                    .put(format!(
+                        "http://localhost:8000/api/v1/luckymon-history/traded/{}",
+                        callee_hist_id
+                    ))
+                    .header(CONTENT_TYPE, "application/json")
+                    .send()
+                    .await?
+                    .json::<HashMap<String, Value>>()
+                    .await?;
+            }
+
+            if !caller_na {
+                let caller_hist = caller_hist.unwrap();
+
+                let new_callee_luckymon = NewLuckymonHistory::new(
+                    callee_id.into(),
+                    caller_hist.date_obtained,
+                    caller_hist.pokemon_id,
+                    caller_hist.shiny,
+                    &caller_hist.pokemon_name,
+                    false,
+                );
+
+                println!(
+                    "Sending new LuckymonHistory creation request via trade with {:?}",
+                    new_callee_luckymon
+                );
+                let client = reqwest::Client::new();
+                let _resp = client
+                    .post("http://localhost:8000/api/v1/luckymon-history?trade=true")
+                    .json(&new_callee_luckymon)
+                    .send()
+                    .await?
+                    .json::<HashMap<String, Value>>()
+                    .await?;
+
+                let client = reqwest::Client::new();
+                let _resp = client
+                    .put(format!(
+                        "http://localhost:8000/api/v1/luckymon-history/traded/{}",
+                        caller_hist_id
+                    ))
+                    .header(CONTENT_TYPE, "application/json")
+                    .send()
+                    .await?
+                    .json::<HashMap<String, Value>>()
+                    .await?;
+            }
+
             interaction
                 .edit_original_interaction_response(&ctx.http, |r| {
                     r.embed(|e| {
                         e.title("✅ Trade Accepted! ✅")
                             .description(format!(
-                                "{} has accepted the trade request. 🎉",
-                                interaction.user.id.mention()
+                                "{} has accepted the trade request from {}. 🎉",
+                                interaction.user.id.mention(),
+                                caller.mention()
                             ))
                             .image(format!("attachment://image.png"))
                     })
                 })
                 .await?;
+
             break;
         } else if custom_id == "cancel_trade"
             && (interaction.user.id == caller.id || interaction.user.id == callee_id)
@@ -393,6 +556,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
                     })
                 })
                 .await?;
+
             break;
         }
     }
