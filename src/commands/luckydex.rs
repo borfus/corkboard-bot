@@ -16,7 +16,7 @@ use serenity::utils::Colour;
 
 use chrono::NaiveDate;
 use image::codecs::png::PngEncoder;
-use image::{imageops, ImageBuffer, Rgba};
+use image::{imageops, ImageBuffer, ImageEncoder, Rgba};
 use imageproc::drawing::draw_text_mut;
 use rand::Rng;
 use rusttype::{point, Font, PositionedGlyph, Scale};
@@ -34,6 +34,7 @@ pub struct LuckymonHistory {
     pub pokemon_id: i64,
     pub shiny: bool,
     pub pokemon_name: String,
+    pub traded: bool,
 }
 
 impl LuckymonHistory {
@@ -44,6 +45,7 @@ impl LuckymonHistory {
         pokemon_id: i64,
         shiny: bool,
         pokemon_name: String,
+        traded: bool,
     ) -> Self {
         let id = Uuid::parse_str(id).expect("Bad UUID");
 
@@ -58,6 +60,7 @@ impl LuckymonHistory {
             pokemon_id,
             shiny,
             pokemon_name,
+            traded,
         }
     }
 
@@ -74,6 +77,7 @@ impl LuckymonHistory {
                 .as_str()
                 .unwrap()
                 .to_string(),
+            hist_map.get("traded").unwrap().as_bool().unwrap(),
         )
     }
 }
@@ -91,10 +95,13 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
     .await?;
     let mut hists: Vec<LuckymonHistory> = Vec::new();
     for hist_map in resp {
-        hists.push(LuckymonHistory::to_hist(hist_map));
+        let hist = LuckymonHistory::to_hist(hist_map);
+        if !hist.traded {
+            hists.push(hist);
+        }
     }
 
-    let items_per_page = 9;
+    let items_per_page = 25;
     let total_pages = (hists.len() as f64 / items_per_page as f64).ceil() as usize;
     let mut current_page = 0;
 
@@ -105,14 +112,17 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
         .timeout(Duration::from_secs(120))
         .await
     {
+        // Immediately intercept the interaction to prevent Discord from throwing an error
+        interaction
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(InteractionResponseType::DeferredUpdateMessage)
+            })
+            .await?;
+
         if interaction.user.id != msg.author.id {
             interaction
-                .create_interaction_response(&ctx.http, |r| {
-                    r.kind(InteractionResponseType::UpdateMessage);
-                    r.interaction_response_data(|d| {
-                        d.set_embed(message.embeds[0].clone().into());
-                        d
-                    })
+                .edit_original_interaction_response(&ctx.http, |r| {
+                    r.set_embed(message.embeds[0].clone().into())
                 })
                 .await?;
 
@@ -137,12 +147,8 @@ async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
         .await?;
 
         interaction
-            .create_interaction_response(&ctx.http, |r| {
-                r.kind(InteractionResponseType::UpdateMessage);
-                r.interaction_response_data(|d| {
-                    d.set_embed(message.embeds[0].clone().into());
-                    d
-                })
+            .edit_original_interaction_response(&ctx.http, |r| {
+                r.set_embed(message.embeds[0].clone().into())
             })
             .await?;
     }
@@ -194,7 +200,7 @@ async fn create_embed_page(
         let mut writer = Cursor::new(&mut buffer);
         let encoder = PngEncoder::new(&mut writer);
         encoder
-            .encode(
+            .write_image(
                 &luckydex_page,
                 luckydex_page.width(),
                 luckydex_page.height(),
@@ -319,20 +325,26 @@ async fn update_embed_page(
 fn create_page_image(data: &[LuckymonHistory]) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
     let bg_root_path = "./resources/luckydex/";
     let sprite_root_path = "./resources/sprites/";
-    let bg_dimensions = 500; // all backgrounds are 500x500
+    let bg_dimensions = 825; // background dimensions x and y
     let sprite_dimensions = 96; // all sprites are 96x96
-    let grid_dimensions = 3; // 3 rows and 3 columns per page
+    let grid_dimensions = 5; // 5 rows and 5 columns per page
     let background_filename = format!("bg{}.png", rand::thread_rng().gen_range(1..=20)); // 1 - 20
 
     let y_spacing_buffer = sprite_dimensions - 10;
-    let x_spacing_buffer = ((bg_dimensions / grid_dimensions) / 2) - 23;
+    let x_spacing_buffer = ((bg_dimensions / grid_dimensions) / 2) - 20;
 
     // Calculate spacing
     let sprite_spacing = (bg_dimensions - (grid_dimensions * sprite_dimensions)) / grid_dimensions;
 
     let mut img = ImageBuffer::new(bg_dimensions, bg_dimensions);
-    let background = image::open(format!("{}{}", bg_root_path, background_filename))
-        .unwrap()
+    let background_unfitted =
+        image::open(format!("{}{}", bg_root_path, background_filename)).unwrap();
+    let background = background_unfitted
+        .resize(
+            bg_dimensions,
+            bg_dimensions,
+            imageops::FilterType::CatmullRom,
+        )
         .to_rgba8();
 
     imageops::overlay(&mut img, &background, 0, 0);

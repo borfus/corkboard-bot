@@ -1,7 +1,7 @@
-pub mod pins;
 pub mod events;
 pub mod faqs;
 pub mod list;
-pub mod luckymon;
 pub mod luckydex;
-
+pub mod luckymon;
+pub mod luckytrade;
+pub mod pins;
