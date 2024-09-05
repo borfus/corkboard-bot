@@ -3,6 +3,7 @@ extern crate serde_json;
 
 use std::collections::HashMap;
 
+use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serenity::framework::standard::macros::command;
@@ -304,7 +305,8 @@ async fn delete_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     println!("Sending Pin delete request with ID {:?}", real_id);
     let client = reqwest::Client::new();
     let resp = client
-        .get(format!("http://localhost:8000/api/v1/pin/delete/{}", real_id).as_str())
+        .delete(format!("http://localhost:8000/api/v1/pin/delete/{}", real_id).as_str())
+        .header(CONTENT_TYPE, "application/json")
         .send()
         .await?
         .json::<HashMap<String, Value>>()
