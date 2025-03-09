@@ -391,7 +391,7 @@ async fn luckytrade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
     while let Some(interaction) = msg
         .await_component_interaction(&ctx)
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(1200))
         .await
     {
         if interaction.user.id != caller.id && interaction.user.id != callee_id {
