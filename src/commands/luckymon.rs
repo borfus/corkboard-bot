@@ -1,5 +1,4 @@
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
@@ -11,13 +10,12 @@ use rustemon::client::RustemonClient;
 use rustemon::model::pokemon::Pokemon;
 use rustemon::pokemon::pokemon;
 use serde::Serialize;
-use serde_json::Value;
-use serenity::framework::standard::macros::command;
-use serenity::framework::standard::CommandResult;
+use serenity::builder::CreateEmbed;
 use serenity::futures::StreamExt;
-use serenity::model::channel::Message;
 use serenity::model::Timestamp;
-use serenity::prelude::*;
+
+use crate::pacific;
+use crate::slash::Invocation;
 
 extern crate reqwest;
 extern crate tokio;
@@ -170,11 +168,12 @@ fn format_for_bulba(name: &str) -> String {
     return capitalize(name).to_string();
 }
 
-#[command]
-#[description = "Lucky pokemon of the day!"]
-async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
-    println!("Got luckymon command..");
-    let user_id = msg.author.id;
+pub async fn slash_luckymon(inv: &Invocation<'_>) -> serenity::Result<()> {
+    // The PokeAPI lookup plus the history write are well past Discord's three
+    // second window on a cold cache, so acknowledge first.
+    inv.defer(false).await?;
+
+    let user_id = inv.user_id();
     let today = Timestamp::now().date_naive();
 
     let one_in_x_shiny_chance = 400; // 1/400 chance to get a shiny
@@ -200,25 +199,32 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
     );
 
     let rustemon_client = RustemonClient::default();
-    let lucky_pokemon: Pokemon = pokemon::get_by_id(daily_pair.0, &rustemon_client).await?;
+    let lucky_pokemon: Pokemon = match pokemon::get_by_id(daily_pair.0, &rustemon_client).await {
+        Ok(p) => p,
+        Err(_) => {
+            return inv
+                .fail("Could not reach PokeAPI. Try again in a moment.")
+                .await
+        }
+    };
 
     let regular_name = lucky_pokemon.species.name;
     let display_name = format_for_display(&regular_name);
     let mut final_name = String::from(display_name.clone());
     let link_name = format_for_bulba(&regular_name);
-    let regular_sprite = lucky_pokemon.sprites.front_default.unwrap();
+    let regular_sprite = match lucky_pokemon.sprites.front_default {
+        Some(s) => s,
+        None => return inv.fail("That pokemon has no sprite art yet!").await,
+    };
 
     let mut sprite = regular_sprite;
 
-    let new = NewLuckymonHistory::new(
-        i64::from(user_id),
-        today,
-        daily_pair.0,
-        daily_pair.1,
-        &display_name,
-        false,
-    );
-
+    // Settle whether this roll is really shiny *before* building the record.
+    //
+    // PokeAPI sometimes has no shiny art for a freshly added pokemon, and
+    // download_sprites() only saves {id}_shiny.png when front_shiny exists. A
+    // history row claiming shiny for one of those sends /luckydex looking for a
+    // file that was never downloaded, and it unwraps on open.
     if daily_pair.1 {
         if let Some(shiny_sprite) = lucky_pokemon.sprites.front_shiny {
             final_name = format!("✨ Shiny {} ✨", final_name);
@@ -230,41 +236,59 @@ async fn luckymon(ctx: &Context, msg: &Message) -> CommandResult {
         }
     }
 
+    let new = NewLuckymonHistory::new(
+        i64::from(user_id),
+        today,
+        daily_pair.0,
+        daily_pair.1,
+        &display_name,
+        false,
+    );
+
     println!(
         "Sending new LuckymonHistory creation request with {:?}",
         new
     );
     let client = reqwest::Client::new();
-    let _resp = client
+    let posted = client
         .post("http://localhost:8000/api/v1/luckymon-history")
         .json(&new)
         .send()
-        .await?
-        .json::<HashMap<String, Value>>()
-        .await?;
-
-    let author_name = &msg.author.name.clone();
-    let avatar_url = &msg.author.avatar_url();
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Your lucky Pokémon of the day is:")
-                    .image(sprite)
-                    .fields(vec!((format!("{}", &final_name), format!("[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))", link_name).to_string(), false)))
-                    .footer(|f| {
-                        f.text(format!("{} - Resets 5PM PDT (12AM UTC)", author_name));
-                        if let Some(avatar_url) = avatar_url {
-                            f.icon_url(avatar_url);
-                        } 
-                        f
-                    })
-            })
-        })
         .await;
 
-    println!("Finished processing luckymon command!");
-    Ok(())
+    if posted.is_err() {
+        return inv
+            .fail("Could not save your luckymon. Is the server running?")
+            .await;
+    }
+
+    let (author_name, avatar_url) = inv.author_identity().await;
+
+    let mut embed = CreateEmbed::default();
+    embed
+        .title("Your lucky Pokémon of the day is:")
+        .image(sprite)
+        .fields(vec![(
+            final_name.to_string(),
+            format!(
+                "[Bulbapedia Page](https://bulbapedia.bulbagarden.net/wiki/{}_(Pok%C3%A9mon))",
+                link_name
+            ),
+            false,
+        )])
+        .footer(|f| {
+            f.text(format!(
+                "{} - Resets {} (12AM UTC)",
+                author_name,
+                pacific::reset_label()
+            ));
+            if let Some(avatar_url) = avatar_url {
+                f.icon_url(avatar_url);
+            }
+            f
+        });
+
+    inv.embed(embed).await
 }
 
 pub async fn initialize() {

@@ -7,14 +7,20 @@ use chrono::NaiveDateTime;
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serenity::framework::standard::macros::command;
-use serenity::framework::standard::{Args, CommandResult};
-use serenity::model::channel::Message;
+use serenity::builder::CreateEmbed;
 use serenity::model::Timestamp;
-use serenity::prelude::*;
 use uuid::Uuid;
 
+use crate::pacific;
+use crate::slash::{require_guild, Invocation};
 use crate::validation::validation;
+
+const BOARD_IMAGE: &str = "./resources/cork-board.png";
+
+/// What a person types.
+const INPUT_FMT: &str = "%m/%d/%Y %-I:%M%p";
+/// What the API speaks.
+const API_FMT: &str = "%Y-%m-%dT%H:%M:%S%.f";
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Event {
@@ -34,17 +40,10 @@ impl Event {
         title: String,
         url: String,
         description: String,
-        start_date: &str,
-        end_date: &str,
+        start_date: NaiveDateTime,
+        end_date: NaiveDateTime,
     ) -> Self {
         let id = Uuid::parse_str(id).expect("Bad UUID");
-
-        let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-        let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
-            .expect("Unable to parse start_date NaiveDateTime for Event.");
-        let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
-            .expect("Unable to parse end_date NaiveDateTime for Event.");
-
         Event {
             id,
             guild_id,
@@ -57,25 +56,26 @@ impl Event {
     }
 
     pub fn to_event(event_map: HashMap<String, Value>) -> Event {
-        Event::new(
-            event_map.get("id").unwrap().as_str().unwrap(),
-            event_map.get("guild_id").unwrap().as_i64().unwrap(),
+        let text = |key: &str| {
             event_map
-                .get("title")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .to_string(),
-            event_map.get("url").unwrap().as_str().unwrap().to_string(),
-            event_map
-                .get("description")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .to_string(),
-            event_map.get("start_date").unwrap().as_str().unwrap(),
-            event_map.get("end_date").unwrap().as_str().unwrap(),
-        )
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
+
+        Event {
+            id: Uuid::parse_str(&text("id")).expect("Bad UUID"),
+            guild_id: event_map
+                .get("guild_id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
+            title: text("title"),
+            url: text("url"),
+            description: text("description"),
+            start_date: parse_api_datetime(&text("start_date")).unwrap_or_default(),
+            end_date: parse_api_datetime(&text("end_date")).unwrap_or_default(),
+        }
     }
 }
 
@@ -95,15 +95,9 @@ impl NewEvent {
         title: String,
         url: String,
         description: String,
-        start_date: &str,
-        end_date: &str,
+        start_date: NaiveDateTime,
+        end_date: NaiveDateTime,
     ) -> Self {
-        let fmt = "%m/%d/%Y %-I:%M%p";
-        let start_date = NaiveDateTime::parse_from_str(start_date, fmt)
-            .expect("Unable to parse start_date NaiveDateTime for Event.");
-        let end_date = NaiveDateTime::parse_from_str(end_date, fmt)
-            .expect("Unable to parse end_date NaiveDateTime for Event.");
-
         NewEvent {
             guild_id,
             title,
@@ -115,380 +109,342 @@ impl NewEvent {
     }
 }
 
-#[command]
-#[description = "Retrieves all events. All times using PST/PDT."]
-async fn events(ctx: &Context, msg: &Message) -> CommandResult {
-    println!("Got events command..");
-    let resp = reqwest::get(format!(
+fn parse_api_datetime(s: &str) -> Option<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(s, API_FMT).ok()
+}
+
+/// Parses a date a person typed.
+///
+/// Returns `None` rather than panicking. The previous version called `.expect()`
+/// on user input, so a mistyped date took the command down instead of saying
+/// what was wrong.
+fn parse_input_datetime(s: &str) -> Option<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(s.trim(), INPUT_FMT).ok()
+}
+
+fn date_help() -> String {
+    format!(
+        "Dates must look like `08/31/2026 5:00PM`, in Pacific time (currently {}).",
+        pacific::abbrev_at(pacific_now_naive())
+    )
+}
+
+/// What a Pacific wall clock reads right now.
+fn pacific_now_naive() -> NaiveDateTime {
+    chrono::Utc::now()
+        .with_timezone(&pacific::PACIFIC)
+        .naive_local()
+}
+
+fn event_embed(title: &str, fields: Vec<(String, String, bool)>) -> CreateEmbed {
+    let mut embed = CreateEmbed::default();
+    embed
+        .title(title)
+        .image("attachment://cork-board.png")
+        .fields(fields)
+        .timestamp(Timestamp::now());
+    embed
+}
+
+fn describe(event: &Event) -> String {
+    // The abbreviation is resolved per event date, not from today: an event in
+    // December is PST even when you are looking at it in July.
+    format!(
+        "[{}]({}): {}\n**Start:** {} {}\n**End:** {} {}",
+        event.title,
+        event.url,
+        event.description,
+        event.start_date.format(INPUT_FMT),
+        pacific::abbrev_at(event.start_date),
+        event.end_date.format(INPUT_FMT),
+        pacific::abbrev_at(event.end_date)
+    )
+}
+
+/// Reads both user-typed dates, reporting whichever one is malformed.
+async fn read_dates(
+    inv: &Invocation<'_>,
+) -> Option<(NaiveDateTime, NaiveDateTime)> {
+    let start_raw = inv.string("start").unwrap_or_default();
+    let end_raw = inv.string("end").unwrap_or_default();
+
+    let start = match parse_input_datetime(&start_raw) {
+        Some(d) => d,
+        None => {
+            let _ = inv
+                .fail_now(
+                    format!("Could not read the start date `{}`. {}", start_raw, date_help()),
+                    false,
+                )
+                .await;
+            return None;
+        }
+    };
+
+    let end = match parse_input_datetime(&end_raw) {
+        Some(d) => d,
+        None => {
+            let _ = inv
+                .fail_now(
+                    format!("Could not read the end date `{}`. {}", end_raw, date_help()),
+                    false,
+                )
+                .await;
+            return None;
+        }
+    };
+
+    if end < start {
+        let _ = inv
+            .fail_now("The end date is before the start date.", false)
+            .await;
+        return None;
+    }
+
+    Some((start, end))
+}
+
+pub async fn slash_events(inv: &Invocation<'_>) -> serenity::Result<()> {
+    let guild_id = match require_guild(inv).await {
+        Some(g) => g,
+        None => return Ok(()),
+    };
+
+    let events: Vec<Event> = match reqwest::get(format!(
         "http://localhost:8000/api/v1/event/current/guild/{}",
-        msg.guild_id.unwrap()
+        guild_id
     ))
-    .await?
-    .json::<Vec<HashMap<String, Value>>>()
-    .await?;
+    .await
+    {
+        Ok(r) => match r.json::<Vec<HashMap<String, Value>>>().await {
+            Ok(list) => list.into_iter().map(Event::to_event).collect(),
+            Err(_) => return inv.fail_now("Could not read the events.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
 
-    let mut events: Vec<Event> = Vec::new();
-    for event_map in resp {
-        events.push(Event::to_event(event_map));
+    let mut fields: Vec<(String, String, bool)> = Vec::new();
+    for (i, event) in events.iter().enumerate() {
+        fields.push((format!("{}.", i + 1), describe(event), false));
     }
 
-    let mut event_fields: Vec<(String, String, bool)> = Vec::new();
-    let mut i = 1;
-    for event in events {
-        event_fields.push((
-            format!("{}.", i),
-            format!(
-                "[{}]({}): {}\n**Start:** {}\n**End:** {}",
-                event.title,
-                event.url,
-                event.description,
-                event.start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
-                event.end_date.format("%m/%d/%Y %-I:%M%p").to_string()
-            ),
-            false,
-        ));
-        i += 1;
-    }
-
-    if event_fields.len() == 0 {
-        event_fields.push((
+    if fields.is_empty() {
+        fields.push((
             "Empty!".to_string(),
             "No current events found!".to_string(),
             false,
         ));
     }
 
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Events (using PST/PDT)")
-                    .image("attachment://cork-board.png")
-                    .fields(event_fields)
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
-        .await;
-
-    println!("Finished processing events command!");
-    Ok(())
+    inv.reply_with_file(
+        event_embed("Events (Pacific time)", fields),
+        BOARD_IMAGE,
+        false,
+    )
+    .await
 }
 
-#[command]
-#[allowed_roles("corkboard")]
-#[description = "Add an Event. All times using PST/PDT."]
-#[usage = "title url description start_date end_date"]
-async fn add_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!["Title", "URL", "Description", "Start Date", "End Date"];
-    if !validation::has_corkboard_role(ctx, msg).await
-        || !validation::has_correct_arg_count(ctx, msg, 5, args.len(), arg_names, "add_event").await
-    {
+pub async fn slash_add_event(inv: &Invocation<'_>) -> serenity::Result<()> {
+    if !validation::has_corkboard_role(inv).await {
         return Ok(());
     }
 
-    let guild_id = i64::from(msg.guild_id.unwrap());
-    let title = args.single_quoted::<String>().unwrap();
-    let url = args.single_quoted::<String>().unwrap();
-    let description = args.single_quoted::<String>().unwrap();
-    let start_date = args.single_quoted::<String>().unwrap();
-    let end_date = args.single_quoted::<String>().unwrap();
+    let guild_id = match require_guild(inv).await {
+        Some(g) => i64::from(g),
+        None => return Ok(()),
+    };
+
+    let (start, end) = match read_dates(inv).await {
+        Some(d) => d,
+        None => return Ok(()),
+    };
+
     let new = NewEvent::new(
         guild_id,
-        title,
-        url,
-        description,
-        start_date.as_str(),
-        end_date.as_str(),
+        inv.string("title").unwrap_or_default(),
+        inv.string("url").unwrap_or_default(),
+        inv.string("description").unwrap_or_default(),
+        start,
+        end,
     );
 
     println!("Sending new Event creation request with {:?}", new);
     let client = reqwest::Client::new();
-    let resp = client
+    let body = match client
         .post("http://localhost:8000/api/v1/event")
         .json(&new)
         .send()
-        .await?
-        .json::<HashMap<String, Value>>()
-        .await?;
+        .await
+    {
+        Ok(r) => match r.json::<HashMap<String, Value>>().await {
+            Ok(b) => b,
+            Err(_) => return inv.fail_now("Could not read the new event.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
 
-    let title = resp.get("title").unwrap();
-    let url = resp.get("url").unwrap();
-    let description = resp.get("description").unwrap();
-    let start_date = resp.get("start_date").unwrap();
-    let end_date = resp.get("end_date").unwrap();
+    let created = Event::to_event(body);
 
-    let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-    let start_date = NaiveDateTime::parse_from_str(start_date.as_str().unwrap(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
-    let end_date = NaiveDateTime::parse_from_str(end_date.as_str().unwrap(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
-
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Created New Event (using PST/PDT)")
-                    .image("attachment://cork-board.png")
-                    .field(
-                        format!("1. "),
-                        format!(
-                            "[{}]({}): {}\n**Start:** {}\n**End:** {}",
-                            title,
-                            url,
-                            description,
-                            start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
-                            end_date.format("%m/%d/%Y %-I:%M%p").to_string()
-                        ),
-                        false,
-                    )
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
-        .await;
-
-    Ok(())
+    inv.reply_with_file(
+        event_embed(
+            "Created New Event (Pacific time)",
+            vec![("1. ".to_string(), describe(&created), false)],
+        ),
+        BOARD_IMAGE,
+        false,
+    )
+    .await
 }
 
-#[command]
-#[allowed_roles("corkboard")]
-#[description = "Edit an Event. All times using PST/PDT."]
-#[usage = "event_id title url description start_date end_date"]
-async fn edit_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec![
-        "Event_id",
-        "Title",
-        "URL",
-        "Description",
-        "Start Date",
-        "End Date",
-    ];
-    if !validation::has_corkboard_role(ctx, msg).await
-        || !validation::has_correct_arg_count(ctx, msg, 6, args.len(), arg_names, "edit_event")
-            .await
-    {
+pub async fn slash_edit_event(inv: &Invocation<'_>) -> serenity::Result<()> {
+    if !validation::has_corkboard_role(inv).await {
         return Ok(());
     }
 
-    let guild_id = i64::from(msg.guild_id.unwrap());
-    let id = args.current().unwrap().to_string();
-    args.advance();
-    let title = args.single_quoted::<String>().unwrap();
-    let url = args.single_quoted::<String>().unwrap();
-    let description = args.single_quoted::<String>().unwrap();
-    let start_date = args.single_quoted::<String>().unwrap();
-    let end_date = args.single_quoted::<String>().unwrap();
+    let guild_id = match require_guild(inv).await {
+        Some(g) => i64::from(g),
+        None => return Ok(()),
+    };
 
-    let fmt = "%m/%d/%Y %-I:%M%p";
-    let start_date = NaiveDateTime::parse_from_str(start_date.as_str(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
-    let end_date = NaiveDateTime::parse_from_str(end_date.as_str(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
+    let display_id = inv.integer("id").unwrap_or(0) as i32;
 
-    let id_int = match id.parse::<i32>() {
-        Ok(i) => i,
-        _error => {
-            let _msg = msg
-                .channel_id
-                .say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Unable to parse ID.",
+    let real_id = match resolve_event_id(guild_id, display_id).await {
+        Some(id) => id,
+        None => {
+            return inv
+                .fail_now(
+                    "Invalid ID! Run `/events` to see a list of usable IDs.",
+                    false,
                 )
-                .await;
-            return Ok(());
+                .await
         }
     };
 
-    let id_map = retrieve_events_id_map(guild_id).await;
-    let real_id_maybe = id_map.get(&id_int).clone();
-    let real_id = match real_id_maybe {
-        Some(i) => i,
-        None => {
-            let _msg = msg
-                .channel_id.say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Invalid ID! Run the `.events` command to see a list of usable IDs."
-                )
-                .await;
-            return Ok(());
-        }
+    let (start, end) = match read_dates(inv).await {
+        Some(d) => d,
+        None => return Ok(()),
     };
 
     let new = Event::new(
         real_id.as_str(),
         guild_id,
-        title,
-        url,
-        description,
-        start_date.format("%Y-%m-%dT%H:%M:%S").to_string().as_str(),
-        end_date.format("%Y-%m-%dT%H:%M:%S").to_string().as_str(),
+        inv.string("title").unwrap_or_default(),
+        inv.string("url").unwrap_or_default(),
+        inv.string("description").unwrap_or_default(),
+        start,
+        end,
     );
 
     println!("Sending Event edit request with {:?}", new);
     let client = reqwest::Client::new();
-    let resp = client
+    let body = match client
         .put(format!("http://localhost:8000/api/v1/event/{}", real_id).as_str())
         .json(&new)
         .send()
-        .await?
-        .json::<HashMap<String, Value>>()
-        .await?;
+        .await
+    {
+        Ok(r) => match r.json::<HashMap<String, Value>>().await {
+            Ok(b) => b,
+            Err(_) => return inv.fail_now("Could not read the edited event.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
 
-    let title = resp.get("title").unwrap();
-    let url = resp.get("url").unwrap();
-    let description = resp.get("description").unwrap();
-    let start_date = resp.get("start_date").unwrap();
-    let end_date = resp.get("end_date").unwrap();
+    let edited = Event::to_event(body);
 
-    let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-    let start_date = NaiveDateTime::parse_from_str(start_date.as_str().unwrap(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
-    let end_date = NaiveDateTime::parse_from_str(end_date.as_str().unwrap(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
-
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Edited Event (using PST/PDT)")
-                    .image("attachment://cork-board.png")
-                    .field(
-                        format!("{}. ", id),
-                        format!(
-                            "[{}]({}): {}\n**Start:** {}\n**End:** {}",
-                            title,
-                            url,
-                            description,
-                            start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
-                            end_date.format("%m/%d/%Y %-I:%M%p").to_string()
-                        ),
-                        false,
-                    )
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
-        .await;
-
-    Ok(())
+    inv.reply_with_file(
+        event_embed(
+            "Edited Event (Pacific time)",
+            vec![(format!("{}. ", display_id), describe(&edited), false)],
+        ),
+        BOARD_IMAGE,
+        false,
+    )
+    .await
 }
 
-#[command]
-#[allowed_roles("corkboard")]
-#[description = "Delete an Event. All times using PST/PDT."]
-#[usage = "event_id"]
-async fn delete_event(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!["Event_id"];
-    if !validation::has_corkboard_role(ctx, msg).await
-        || !validation::has_correct_arg_count(ctx, msg, 1, args.len(), arg_names, "delete_event")
-            .await
-    {
+pub async fn slash_delete_event(inv: &Invocation<'_>) -> serenity::Result<()> {
+    if !validation::has_corkboard_role(inv).await {
         return Ok(());
     }
 
-    let guild_id = i64::from(msg.guild_id.unwrap());
-    args.quoted();
-    let id = args.current().unwrap().to_string();
-    let id_int = match id.parse::<i32>() {
-        Ok(i) => i,
-        _error => {
-            let _msg = msg
-                .channel_id
-                .say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Unable to parse ID.",
-                )
-                .await;
-            return Ok(());
-        }
+    let guild_id = match require_guild(inv).await {
+        Some(g) => i64::from(g),
+        None => return Ok(()),
     };
 
-    let id_map = retrieve_events_id_map(guild_id).await;
-    let real_id_maybe = id_map.get(&id_int).clone();
-    let real_id = match real_id_maybe {
-        Some(i) => i,
+    let display_id = inv.integer("id").unwrap_or(0) as i32;
+
+    let real_id = match resolve_event_id(guild_id, display_id).await {
+        Some(id) => id,
         None => {
-            let _msg = msg
-                .channel_id.say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Invalid ID! Run the `.events` command to see a list of usable IDs."
+            return inv
+                .fail_now(
+                    "Invalid ID! Run `/events` to see a list of usable IDs.",
+                    false,
                 )
-                .await;
-            return Ok(());
+                .await
         }
     };
 
     println!("Sending Event delete request with ID {:?}", real_id);
     let client = reqwest::Client::new();
-    let resp = client
+    let body = match client
         .delete(format!("http://localhost:8000/api/v1/event/delete/{}", real_id).as_str())
         .header(CONTENT_TYPE, "application/json")
         .send()
-        .await?
-        .json::<HashMap<String, Value>>()
-        .await?;
+        .await
+    {
+        Ok(r) => match r.json::<HashMap<String, Value>>().await {
+            Ok(b) => b,
+            Err(_) => return inv.fail_now("Could not read the deleted event.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
 
-    let title = resp.get("title").unwrap();
-    let url = resp.get("url").unwrap();
-    let description = resp.get("description").unwrap();
-    let start_date = resp.get("start_date").unwrap();
-    let end_date = resp.get("end_date").unwrap();
+    let deleted = Event::to_event(body);
 
-    let fmt = "%Y-%m-%dT%H:%M:%S%.f";
-    let start_date = NaiveDateTime::parse_from_str(start_date.as_str().unwrap(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
-    let end_date = NaiveDateTime::parse_from_str(end_date.as_str().unwrap(), fmt)
-        .expect("Unable to parse start_date NaiveDateTime for Event.");
+    inv.reply_with_file(
+        event_embed(
+            "Deleted Event (Pacific time)",
+            vec![(format!("{}. ", display_id), describe(&deleted), false)],
+        ),
+        BOARD_IMAGE,
+        false,
+    )
+    .await
+}
 
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Deleted Event (using PST/PDT)")
-                    .image("attachment://cork-board.png")
-                    .field(
-                        format!("{}. ", id),
-                        format!(
-                            "[{}]({}): {}\n**Start:** {}\n**End:** {}",
-                            title,
-                            url,
-                            description,
-                            start_date.format("%m/%d/%Y %-I:%M%p").to_string(),
-                            end_date.format("%m/%d/%Y %-I:%M%p").to_string()
-                        ),
-                        false,
-                    )
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
-        .await;
-
-    Ok(())
+/// Turns the 1-based number shown by `/events` into the record's real uuid.
+async fn resolve_event_id(guild_id: i64, display_id: i32) -> Option<String> {
+    retrieve_events_id_map(guild_id)
+        .await
+        .get(&display_id)
+        .cloned()
 }
 
 async fn retrieve_events_id_map(guild_id: i64) -> HashMap<i32, String> {
-    let resp = reqwest::get(format!(
+    let mut id_map: HashMap<i32, String> = HashMap::new();
+
+    let resp = match reqwest::get(format!(
         "http://localhost:8000/api/v1/event/current/guild/{}",
         guild_id
     ))
     .await
-    .unwrap()
-    .json::<Vec<HashMap<String, Value>>>()
-    .await
-    .unwrap();
-    let mut events: Vec<Event> = Vec::new();
-    for event_map in resp {
-        events.push(Event::to_event(event_map));
+    {
+        Ok(r) => r,
+        Err(_) => return id_map,
+    };
+
+    let list = match resp.json::<Vec<HashMap<String, Value>>>().await {
+        Ok(l) => l,
+        Err(_) => return id_map,
+    };
+
+    for (i, event_map) in list.into_iter().enumerate() {
+        let event = Event::to_event(event_map);
+        id_map.insert((i + 1) as i32, event.id.to_string());
     }
 
-    let mut result: HashMap<i32, String> = HashMap::new();
-    let mut i = 1;
-    for event in events {
-        result.insert(i, event.id.to_string());
-        i += 1;
-    }
-
-    result
+    id_map
 }

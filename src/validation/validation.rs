@@ -1,55 +1,49 @@
-use serenity::prelude::*;
-use serenity::model::channel::Message;
-use serenity::model::guild::Role;
-use serenity::http::CacheHttp;
+use crate::slash::Invocation;
 
-pub async fn has_corkboard_role(ctx: &Context, msg: &Message) -> bool {
-    let guild_id = msg.guild_id.unwrap();
-    let roles : Vec<Role> = ctx.http().get_guild_roles(guild_id.into()).await.unwrap();
-    for role in roles {
-        if role.name == "corkboard" {
-            if msg.author.has_role(&ctx.http, guild_id, role.id).await.unwrap() {
-                return true;
-            } else {
-                let _msg = msg
-                    .channel_id.say(
-                        &ctx.http,
-                        ":bangbang: Error :bangbang: - Only users with the `corkboard` role can execute this command."
-                    )
-                    .await;
-                return false;
-            }
+/// Gate for the admin commands.
+///
+/// The interaction already carries the caller's role ids, so this only needs to
+/// look up which role is called `corkboard` -- no second round trip to ask
+/// whether the user has it.
+pub async fn has_corkboard_role(inv: &Invocation<'_>) -> bool {
+    let guild_id = match inv.guild_id() {
+        Some(g) => g,
+        None => {
+            let _ = inv.fail("This command only works inside a server.").await;
+            return false;
+        }
+    };
+
+    let member = match inv.command.member.as_ref() {
+        Some(m) => m,
+        None => {
+            let _ = inv.fail("Could not read your roles.").await;
+            return false;
+        }
+    };
+
+    let roles = match inv.ctx.http.get_guild_roles(guild_id.into()).await {
+        Ok(r) => r,
+        Err(_) => {
+            let _ = inv.fail("Could not read this server's roles.").await;
+            return false;
+        }
+    };
+
+    let corkboard = roles.iter().find(|r| r.name == "corkboard");
+
+    match corkboard {
+        Some(role) if member.roles.contains(&role.id) => true,
+        _ => {
+            let _ = inv
+                .fail("Only users with the `corkboard` role can run this command.")
+                .await;
+            false
         }
     }
-
-    false
 }
 
-pub async fn has_correct_arg_count(
-    ctx: &Context,
-    msg: &Message,
-    expected: usize,
-    actual: usize,
-    args: Vec<&str>,
-    command_name: &str
-) -> bool {
-    if expected != actual {
-        let _msg = msg
-            .channel_id.say(
-                &ctx.http,
-                format!(
-                    ":bangbang: Error :bangbang: - the `{}` command requires {} arguments:\n\n\t\t{:?}
-                    \nSee `.help {}`  for more usage details.",
-                    command_name,
-                    expected,
-                    args,
-                    command_name
-                )
-            )
-            .await;
-
-        return false;
-    }
-
-    true
-}
+// `has_correct_arg_count` used to live here. Discord validates required options
+// before the interaction ever reaches the bot, so a command body can no longer
+// be called with the wrong number of arguments and the check has nothing left
+// to do.
