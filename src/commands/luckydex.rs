@@ -1,22 +1,18 @@
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::time::Duration;
 
-use serenity::builder::{CreateActionRow, CreateComponents};
-use serenity::framework::standard::macros::command;
-use serenity::framework::standard::CommandResult;
+use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::application::component::ButtonStyle;
 use serenity::model::application::interaction::InteractionResponseType;
-use serenity::model::channel::Message;
-use serenity::model::prelude::AttachmentType;
-use serenity::model::prelude::*;
 use serenity::model::Timestamp;
 use serenity::prelude::*;
 use serenity::utils::Colour;
 
+use super::image_host;
+use crate::slash::Invocation;
+
 use chrono::NaiveDate;
-use image::codecs::png::PngEncoder;
-use image::{imageops, ImageBuffer, ImageEncoder, Rgba};
+use image::{imageops, ImageBuffer, Rgba};
 use imageproc::drawing::draw_text_mut;
 use rand::Rng;
 use rusttype::{point, Font, PositionedGlyph, Scale};
@@ -82,252 +78,216 @@ impl LuckymonHistory {
     }
 }
 
-#[command]
-#[description = "Retrieves Luckymon History for a User."]
-async fn luckydex(ctx: &Context, msg: &Message) -> CommandResult {
-    println!("Got luckydex command..");
-    let resp = reqwest::get(format!(
+/// One page is the full 10x10 grid drawn by `create_page_image`.
+const ITEMS_PER_PAGE: usize = 100;
+const PAGE_TIMEOUT_SECS: u64 = 120;
+
+/// `/luckydex` -- your collection, ephemeral.
+///
+/// Private for the same reason `/luckyteam` is: a dex is only interesting to
+/// the person who owns it, and posting one publicly every time somebody wants a
+/// look turns a busy channel into a wall of bot images.
+///
+/// Because the reply is ephemeral, the "only the caller may page" check the
+/// prefix version needed is gone -- nobody else can see the buttons to click.
+pub async fn slash_luckydex(inv: &Invocation<'_>) -> serenity::Result<()> {
+    inv.defer(true).await?;
+
+    let ctx = inv.ctx;
+    let user_id = i64::from(inv.user_id());
+
+    let resp = match reqwest::get(format!(
         "http://localhost:8000/api/v1/luckymon-history/user-id/{}",
-        i64::from(msg.author.id)
+        user_id
     ))
-    .await?
-    .json::<Vec<HashMap<String, Value>>>()
-    .await?;
-    let mut hists: Vec<LuckymonHistory> = Vec::new();
-    for hist_map in resp {
-        let hist = LuckymonHistory::to_hist(hist_map);
-        if !hist.traded {
-            hists.push(hist);
-        }
-    }
-
-    let items_per_page = 25;
-    let total_pages = (hists.len() as f64 / items_per_page as f64).ceil() as usize;
-    let mut current_page = 0;
-
-    let mut message = create_embed_page(ctx, msg, &hists, items_per_page, current_page).await?;
-
-    while let Some(interaction) = message
-        .await_component_interaction(&ctx)
-        .timeout(Duration::from_secs(120))
-        .await
+    .await
     {
-        // Immediately intercept the interaction to prevent Discord from throwing an error
-        interaction
-            .create_interaction_response(&ctx.http, |r| {
-                r.kind(InteractionResponseType::DeferredUpdateMessage)
-            })
-            .await?;
+        Ok(r) => match r.json::<Vec<HashMap<String, Value>>>().await {
+            Ok(list) => list,
+            Err(_) => return inv.fail("Could not read your luckydex.").await,
+        },
+        Err(_) => return inv.fail("Could not reach the server.").await,
+    };
 
-        if interaction.user.id != msg.author.id {
-            interaction
-                .edit_original_interaction_response(&ctx.http, |r| {
-                    r.set_embed(message.embeds[0].clone().into())
-                })
-                .await?;
+    let hists: Vec<LuckymonHistory> = resp
+        .into_iter()
+        .map(LuckymonHistory::to_hist)
+        .filter(|h| !h.traded)
+        .collect();
 
-            continue;
-        }
+    let total_pages = ((hists.len() as f64 / ITEMS_PER_PAGE as f64).ceil() as usize).max(1);
+    let mut current_page = 0usize;
 
-        let custom_id = &interaction.data.custom_id;
-        if custom_id == "prev" && current_page > 0 {
-            current_page -= 1;
-        } else if custom_id == "next" && current_page < total_pages - 1 {
-            current_page += 1;
-        }
+    let (author_name, avatar_url) = inv.author_identity().await;
 
-        message = update_embed_page(
-            ctx,
-            &mut message,
-            &hists,
-            items_per_page,
-            current_page,
-            &msg,
-        )
+    // Held across page turns so the loading state can show the picture already
+    // on screen rather than a blank frame.
+    let mut image_url = render_page(ctx, &hists, current_page).await;
+
+    inv.command
+        .edit_original_interaction_response(&ctx.http, |r| {
+            r.set_embed(page_embed(
+                &image_url,
+                &author_name,
+                &avatar_url,
+                current_page,
+                total_pages,
+                false,
+            ));
+            r.components(|c| c.add_action_row(page_buttons(current_page, total_pages, true)))
+        })
         .await?;
 
+    let dex_msg = inv.command.get_interaction_response(&ctx.http).await?;
+
+    while let Some(interaction) = dex_msg
+        .await_component_interaction(ctx)
+        .timeout(Duration::from_secs(PAGE_TIMEOUT_SECS))
+        .await
+    {
+        let target = match interaction.data.custom_id.as_str() {
+            "prev" if current_page > 0 => current_page - 1,
+            "next" if current_page + 1 < total_pages => current_page + 1,
+            _ => current_page,
+        };
+
+        // Answer the click with a visible change rather than a silent
+        // acknowledgement: greyed-out buttons and a "Loading page N" footer, so
+        // the wait reads as progress instead of a broken button. This also
+        // rules out a second click landing while the first is still drawing.
         interaction
-            .edit_original_interaction_response(&ctx.http, |r| {
-                r.set_embed(message.embeds[0].clone().into())
+            .create_interaction_response(&ctx.http, |r| {
+                r.kind(InteractionResponseType::UpdateMessage)
+                    .interaction_response_data(|d| {
+                        d.set_embed(page_embed(
+                            &image_url,
+                            &author_name,
+                            &avatar_url,
+                            target,
+                            total_pages,
+                            true,
+                        ))
+                        .components(|c| {
+                            c.add_action_row(page_buttons(target, total_pages, false))
+                        })
+                    })
             })
             .await?;
+
+        if target != current_page {
+            current_page = target;
+            image_url = render_page(ctx, &hists, current_page).await;
+        }
+
+        let _ = interaction
+            .edit_original_interaction_response(&ctx.http, |r| {
+                r.set_embed(page_embed(
+                    &image_url,
+                    &author_name,
+                    &avatar_url,
+                    current_page,
+                    total_pages,
+                    false,
+                ));
+                r.components(|c| {
+                    c.add_action_row(page_buttons(current_page, total_pages, true))
+                })
+            })
+            .await;
     }
 
-    println!("Finished processing luckydex command!");
+    // The collector has stopped listening. Strip the buttons so a later click
+    // does not sit unanswered.
+    let _ = inv
+        .command
+        .edit_original_interaction_response(&ctx.http, |r| r.components(|c| c))
+        .await;
+
     Ok(())
 }
 
-#[allow(deprecated)]
-async fn create_embed_page(
-    ctx: &Context,
-    msg: &Message,
-    data: &[LuckymonHistory],
-    items_per_page: usize,
-    current_page: usize,
-) -> serenity::Result<Message> {
-    let start_index = current_page * items_per_page;
-    let end_index = usize::min(start_index + items_per_page, data.len());
-
-    let current_data = &data[start_index..end_index];
-    let luckydex_page = create_page_image(current_data);
-
-    let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
-    if total_pages == 0 {
-        total_pages = 1;
-    }
-
-    let action_row = CreateActionRow::default()
+/// The pager controls.
+///
+/// `enabled` goes false while a page is being drawn: a 10x10 page is around a
+/// megabyte to composite and upload, which is long enough that an unchanged
+/// message reads as a dead button. Greying the controls out both shows that
+/// something is happening and makes a second click impossible.
+fn page_buttons(current_page: usize, total_pages: usize, enabled: bool) -> CreateActionRow {
+    CreateActionRow::default()
         .create_button(|b| {
             b.style(ButtonStyle::Primary)
                 .custom_id("prev")
-                .disabled(current_page == 0)
+                .disabled(!enabled || current_page == 0)
                 .label("Previous")
         })
         .create_button(|b| {
             b.style(ButtonStyle::Primary)
                 .custom_id("next")
-                .disabled(current_page == total_pages - 1)
+                .disabled(!enabled || current_page + 1 >= total_pages)
                 .label("Next")
         })
-        .clone();
-
-    let components = CreateComponents::default()
-        .add_action_row(action_row)
-        .clone();
-
-    let mut buffer: Vec<u8> = Vec::new();
-    {
-        let mut writer = Cursor::new(&mut buffer);
-        let encoder = PngEncoder::new(&mut writer);
-        encoder
-            .write_image(
-                &luckydex_page,
-                luckydex_page.width(),
-                luckydex_page.height(),
-                image::ColorType::Rgba8,
-            )
-            .expect("Error encoding image");
-    }
-
-    let image_url = send_dummy_message(&ctx, &buffer).await;
-
-    msg.channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Luckydex")
-                    .image("attachment://image.png")
-                    .color(Colour::from_rgb(0, 255, 255))
-                    .footer(|f| {
-                        f.text(format!(
-                            "{}: Page {} of {}",
-                            &msg.author.name,
-                            current_page + 1,
-                            total_pages
-                        ));
-                        if let Some(avatar_url) = &msg.author.avatar_url() {
-                            f.icon_url(avatar_url);
-                        }
-                        f
-                    });
-                e.image(image_url);
-                e.timestamp(Timestamp::now());
-                e
-            });
-            m.set_components(components.clone())
-        })
-        .await
+        .clone()
 }
 
-#[allow(deprecated)]
-async fn update_embed_page(
-    ctx: &Context,
-    msg: &mut Message,
-    data: &[LuckymonHistory],
-    items_per_page: usize,
-    current_page: usize,
-    original_owner: &Message,
-) -> serenity::Result<Message> {
-    let start_index = current_page * items_per_page;
-    let end_index = usize::min(start_index + items_per_page, data.len());
+/// Composites a page and parks it in the staging channel, returning its URL.
+async fn render_page(ctx: &Context, data: &[LuckymonHistory], page: usize) -> String {
+    let start_index = page * ITEMS_PER_PAGE;
+    let end_index = usize::min(start_index + ITEMS_PER_PAGE, data.len());
 
-    let current_data = &data[start_index..end_index];
-    let luckydex_page = create_page_image(current_data);
+    let luckydex_page = create_page_image(&data[start_index..end_index]);
+    image_host::host(ctx, &luckydex_page).await
+}
 
-    let mut total_pages = (data.len() as f64 / items_per_page as f64).ceil() as usize;
-    if total_pages == 0 {
-        total_pages = 1;
-    }
+/// Builds the embed around an already-hosted image.
+///
+/// Kept separate from rendering so the loading state can reuse the picture
+/// that is already on screen -- drawing a second one just to say "please wait"
+/// would cost exactly as much as the page being waited for.
+fn page_embed(
+    image_url: &str,
+    author_name: &str,
+    avatar_url: &Option<String>,
+    page: usize,
+    total_pages: usize,
+    loading: bool,
+) -> CreateEmbed {
+    let footer = if loading {
+        format!(
+            "{}: Loading page {} of {}\u{2026}",
+            author_name,
+            page + 1,
+            total_pages
+        )
+    } else {
+        format!("{}: Page {} of {}", author_name, page + 1, total_pages)
+    };
 
-    let author_name = &original_owner.author.name.clone();
-    let avatar_url = &original_owner.author.avatar_url();
-
-    let action_row = CreateActionRow::default()
-        .create_button(|b| {
-            b.style(ButtonStyle::Primary)
-                .custom_id("prev")
-                .disabled(current_page == 0)
-                .label("Previous")
-        })
-        .create_button(|b| {
-            b.style(ButtonStyle::Primary)
-                .custom_id("next")
-                .disabled(current_page == total_pages - 1)
-                .label("Next")
-        })
-        .clone();
-
-    let components = CreateComponents::default()
-        .add_action_row(action_row)
-        .clone();
-
-    let mut buffer: Vec<u8> = Vec::new();
-    {
-        let mut writer = Cursor::new(&mut buffer);
-        let encoder = PngEncoder::new(&mut writer);
-        encoder
-            .encode(
-                &luckydex_page,
-                luckydex_page.width(),
-                luckydex_page.height(),
-                image::ColorType::Rgba8,
-            )
-            .expect("Error encoding image");
-    }
-
-    let image_url = send_dummy_message(&ctx, &buffer).await;
-
-    msg.channel_id
-        .edit_message(&ctx.http, msg.id, |m| {
-            m.embed(|e| {
-                e.title("Luckydex")
-                    .color(Colour::from_rgb(0, 255, 255))
-                    .footer(|f| {
-                        f.text(format!(
-                            "{}: Page {} of {}",
-                            author_name,
-                            current_page + 1,
-                            total_pages
-                        ));
-                        if let Some(avatar_url) = avatar_url {
-                            f.icon_url(avatar_url);
-                        }
-                        f
-                    });
-                e.image(image_url);
-                e.timestamp(Timestamp::now());
-                e
-            });
-            m.set_components(components.clone())
-        })
-        .await
+    let mut embed = CreateEmbed::default();
+    embed
+        .title("Luckydex")
+        .color(Colour::from_rgb(0, 255, 255))
+        .image(image_url)
+        .timestamp(Timestamp::now())
+        .footer(|f| {
+            f.text(footer);
+            if let Some(avatar_url) = avatar_url {
+                f.icon_url(avatar_url);
+            }
+            f
+        });
+    embed
 }
 
 fn create_page_image(data: &[LuckymonHistory]) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
     let bg_root_path = "./resources/luckydex/";
     let sprite_root_path = "./resources/sprites/";
-    let bg_dimensions = 825; // background dimensions x and y
+    // Canvas scales with the grid rather than the cells: a 96px sprite plus its
+    // three lines of text needs about 165px of room, so ten columns needs 1650.
+    // Shrinking cells to keep the old 825px canvas would leave no space for
+    // either.
+    let grid_dimensions = 10; // 10 rows and 10 columns per page
     let sprite_dimensions = 96; // all sprites are 96x96
-    let grid_dimensions = 5; // 5 rows and 5 columns per page
+    let bg_dimensions = 165 * grid_dimensions; // background dimensions x and y
     let background_filename = format!("bg{}.png", rand::thread_rng().gen_range(1..=20)); // 1 - 20
 
     let y_spacing_buffer = sprite_dimensions - 10;
@@ -399,7 +359,7 @@ fn create_page_image(data: &[LuckymonHistory]) -> ImageBuffer<Rgba<u8>, Vec<u8>>
                 .unwrap()
                 .to_rgba8();
 
-                pokemon_name = format!("✧˖° Shiny {} °˖✧", pokemon_name);
+                pokemon_name = format!("\u{2727}\u{02D6}\u{00B0} Shiny {} \u{00B0}\u{02D6}\u{2727}", pokemon_name);
             } else {
             }
 
@@ -413,7 +373,7 @@ fn create_page_image(data: &[LuckymonHistory]) -> ImageBuffer<Rgba<u8>, Vec<u8>>
 
             let texts = vec![
                 pokemon_name,
-                format!("Pokédex #: {}", pokemon_data.pokemon_id),
+                format!("Pok\u{00E9}dex #: {}", pokemon_data.pokemon_id),
                 pokemon_data.date_obtained.to_string(),
             ];
             let mut text_spacing = 8;
@@ -438,6 +398,69 @@ fn create_page_image(data: &[LuckymonHistory]) -> ImageBuffer<Rgba<u8>, Vec<u8>>
     return img;
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Renders a full page to disk for eyeballing. Ignored by default: it needs
+    /// `resources/` present and produces a file rather than an assertion.
+    #[test]
+    #[ignore]
+    fn preview_luckydex_page() {
+        let data: Vec<LuckymonHistory> = (1..=ITEMS_PER_PAGE)
+            .map(|i| LuckymonHistory {
+                id: Uuid::new_v4(),
+                user_id: 1,
+                date_obtained: NaiveDate::from_ymd_opt(2026, 8, 31).unwrap(),
+                pokemon_id: i as i64,
+                shiny: i % 17 == 0,
+                pokemon_name: format!("pokemon-{}", i),
+                traded: false,
+            })
+            .collect();
+
+        let img = create_page_image(&data);
+        let expected = 165 * 10;
+        assert_eq!(img.width(), expected);
+        assert_eq!(img.height(), expected);
+
+        let path = std::env::var("DEX_PREVIEW_PATH")
+            .unwrap_or_else(|_| "luckydex_preview.png".to_string());
+        img.save(&path).expect("could not write preview");
+        println!("wrote {} ({}x{})", path, img.width(), img.height());
+    }
+
+    /// The grid only lines up while the canvas is an exact multiple of the cell
+    /// size -- the sprite and text offsets are derived from integer division.
+    #[test]
+    fn canvas_divides_evenly_into_cells() {
+        let grid: u32 = 10;
+        let canvas: u32 = 165 * grid;
+        let sprite: u32 = 96;
+
+        assert_eq!(canvas % grid, 0, "cells must be a whole number of pixels");
+        assert_eq!(
+            (canvas - grid * sprite) % grid,
+            0,
+            "sprite spacing must divide evenly too"
+        );
+
+        // A cell has to hold the sprite plus three lines of text beneath it.
+        let cell = canvas / grid;
+        assert!(
+            cell >= sprite + 45,
+            "cell of {}px is too small for a {}px sprite and its labels",
+            cell,
+            sprite
+        );
+    }
+
+    #[test]
+    fn a_page_holds_the_whole_grid() {
+        assert_eq!(ITEMS_PER_PAGE, 10 * 10);
+    }
+}
+
 fn get_font<'a>() -> Font<'a> {
     let font_data: &[u8] = include_bytes!("../../resources/fonts/DejaVuSans.ttf");
     return Font::try_from_bytes(font_data).unwrap();
@@ -456,37 +479,4 @@ fn text_width(font: &Font, scale: Scale, text: &str) -> f32 {
         .next()
         .unwrap_or(0.0);
     width
-}
-
-async fn send_dummy_message(ctx: &Context, buffer: &Vec<u8>) -> String {
-    // Send dummy message to specific Discord server & channel to upload the image to grab the url
-    // Note: If you want to host this bot by yourself, you need to make a server with a dedicated channel
-    // that this bot can post the generated images in to properly update the embedded message with a new image
-    let channel_id: ChannelId = ChannelId(1155366534617763931);
-    let guild_id: GuildId = GuildId(423944755118866444);
-
-    let mut image_url = String::new();
-
-    // Check if the channel is in the server
-    if let Ok(channel) = channel_id.to_channel(&ctx).await {
-        if let Some(guild_channel) = channel.guild() {
-            if guild_channel.guild_id == guild_id {
-                let files = vec![AttachmentType::Bytes {
-                    data: buffer.into(),
-                    filename: "image.png".to_string(),
-                }];
-                if let Ok(sent_message) = channel_id
-                    .send_files(&ctx.http, files, |m| m.content(""))
-                    .await
-                {
-                    // Extract the URL of the uploaded image
-                    if let Some(attachment) = sent_message.attachments.first() {
-                        image_url = attachment.url.clone();
-                    }
-                }
-            }
-        }
-    }
-
-    image_url
 }

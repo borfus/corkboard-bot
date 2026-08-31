@@ -6,14 +6,14 @@ use std::collections::HashMap;
 use reqwest::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serenity::framework::standard::macros::command;
-use serenity::framework::standard::{Args, CommandResult};
-use serenity::model::channel::Message;
+use serenity::builder::CreateEmbed;
 use serenity::model::Timestamp;
-use serenity::prelude::*;
 use uuid::Uuid;
 
+use crate::slash::{require_guild, Invocation};
 use crate::validation::validation;
+
+const BOARD_IMAGE: &str = "./resources/cork-board.png";
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Pin {
@@ -71,75 +71,84 @@ impl NewPin {
     }
 }
 
-#[command]
-#[description = "Retrieves all pins."]
-async fn pins(ctx: &Context, msg: &Message) -> CommandResult {
-    println!("Got pins command..");
+fn pin_embed(title: &str, fields: Vec<(String, String, bool)>) -> CreateEmbed {
+    let mut embed = CreateEmbed::default();
+    embed
+        .title(title)
+        .image("attachment://cork-board.png")
+        .fields(fields)
+        .timestamp(Timestamp::now());
+    embed
+}
+
+/// Renders one record from an API response body.
+fn record_field(label: String, body: &HashMap<String, Value>) -> (String, String, bool) {
+    let title = body.get("title").and_then(|v| v.as_str()).unwrap_or("?");
+    let url = body.get("url").and_then(|v| v.as_str()).unwrap_or("");
+    let description = body
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    (label, format!("[{}]({}): {}", title, url, description), false)
+}
+
+pub async fn slash_pins(inv: &Invocation<'_>) -> serenity::Result<()> {
+    let guild_id = match require_guild(inv).await {
+        Some(g) => g,
+        None => return Ok(()),
+    };
+
     let resp = reqwest::get(format!(
         "http://localhost:8000/api/v1/pin/guild/{}",
-        msg.guild_id.unwrap()
+        guild_id
     ))
-    .await?
-    .json::<Vec<HashMap<String, Value>>>()
-    .await?;
-    let mut pins: Vec<Pin> = Vec::new();
-    for pin_map in resp {
-        pins.push(Pin::to_pin(pin_map));
-    }
+    .await;
 
-    let mut pin_fields: Vec<(String, String, bool)> = Vec::new();
-    let mut i = 1;
-    if pins.len() == 0 {
-        pin_fields.push((
+    let pins: Vec<Pin> = match resp {
+        Ok(r) => match r.json::<Vec<HashMap<String, Value>>>().await {
+            Ok(list) => list.into_iter().map(Pin::to_pin).collect(),
+            Err(_) => return inv.fail_now("Could not read the pins.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
+
+    let mut fields: Vec<(String, String, bool)> = Vec::new();
+    if pins.is_empty() {
+        fields.push((
             "Pins: ".to_string(),
             "No current pins found!".to_string(),
             false,
         ));
     } else {
-        for pin in pins {
-            pin_fields.push((
-                format!("{}.", i),
+        for (i, pin) in pins.iter().enumerate() {
+            fields.push((
+                format!("{}.", i + 1),
                 format!("[{}]({}): {}", pin.title, pin.url, pin.description),
                 false,
             ));
-            i += 1;
         }
     }
 
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Pins")
-                    .image("attachment://cork-board.png")
-                    .fields(pin_fields)
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
-        .await;
-
-    println!("Finished processing pins command!");
-    Ok(())
+    inv.reply_with_file(pin_embed("Pins", fields), BOARD_IMAGE, false)
+        .await
 }
 
-#[command]
-#[allowed_roles("corkboard")]
-#[description = "Add a Pin."]
-#[usage = "title url description"]
-async fn add_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!["Title", "URL", "Description"];
-    if !validation::has_corkboard_role(ctx, msg).await
-        || !validation::has_correct_arg_count(ctx, msg, 3, args.len(), arg_names, "add_pin").await
-    {
+pub async fn slash_add_pin(inv: &Invocation<'_>) -> serenity::Result<()> {
+    if !validation::has_corkboard_role(inv).await {
         return Ok(());
     }
 
-    let guild_id = i64::from(msg.guild_id.unwrap());
-    let title = args.single_quoted::<String>().unwrap();
-    let url = args.single_quoted::<String>().unwrap();
-    let description = args.single_quoted::<String>().unwrap();
-    let new = NewPin::new(guild_id, title, url, description);
+    let guild_id = match require_guild(inv).await {
+        Some(g) => i64::from(g),
+        None => return Ok(()),
+    };
+
+    let new = NewPin::new(
+        guild_id,
+        inv.string("title").unwrap_or_default(),
+        inv.string("url").unwrap_or_default(),
+        inv.string("description").unwrap_or_default(),
+    );
 
     println!("Sending new Pin creation request with {:?}", new);
     let client = reqwest::Client::new();
@@ -147,82 +156,55 @@ async fn add_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult 
         .post("http://localhost:8000/api/v1/pin")
         .json(&new)
         .send()
-        .await?
-        .json::<HashMap<String, Value>>()
-        .await?;
-
-    let title = resp.get("title").unwrap();
-    let url = resp.get("url").unwrap();
-    let description = resp.get("description").unwrap();
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Created New Pin")
-                    .image("attachment://cork-board.png")
-                    .field(
-                        "1. ",
-                        format!("[{}]({}): {}", title, url, description),
-                        false,
-                    )
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
         .await;
 
-    Ok(())
+    let body = match resp {
+        Ok(r) => match r.json::<HashMap<String, Value>>().await {
+            Ok(b) => b,
+            Err(_) => return inv.fail_now("Could not read the new pin.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
+
+    inv.reply_with_file(
+        pin_embed("Created New Pin", vec![record_field("1. ".to_string(), &body)]),
+        BOARD_IMAGE,
+        false,
+    )
+    .await
 }
 
-#[command]
-#[allowed_roles("corkboard")]
-#[description = "Edit a Pin."]
-#[usage = "pin_id title url description"]
-async fn edit_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!["Pin_id", "Title", "URL", "Description"];
-    if !validation::has_corkboard_role(ctx, msg).await
-        || !validation::has_correct_arg_count(ctx, msg, 4, args.len(), arg_names, "edit_pin").await
-    {
+pub async fn slash_edit_pin(inv: &Invocation<'_>) -> serenity::Result<()> {
+    if !validation::has_corkboard_role(inv).await {
         return Ok(());
     }
 
-    let guild_id = i64::from(msg.guild_id.unwrap());
-    let id = args.current().unwrap().to_string();
-    args.advance();
-    let title = args.single_quoted::<String>().unwrap();
-    let url = args.single_quoted::<String>().unwrap();
-    let description = args.single_quoted::<String>().unwrap();
-
-    let id_int = match id.parse::<i32>() {
-        Ok(i) => i,
-        _error => {
-            let _msg = msg
-                .channel_id
-                .say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Unable to parse ID.",
-                )
-                .await;
-            return Ok(());
-        }
+    let guild_id = match require_guild(inv).await {
+        Some(g) => i64::from(g),
+        None => return Ok(()),
     };
 
-    let id_map = retrieve_pins_id_map(guild_id).await;
-    let real_id_maybe = id_map.get(&id_int).clone();
-    let real_id = match real_id_maybe {
-        Some(i) => i,
+    let display_id = inv.integer("id").unwrap_or(0) as i32;
+
+    let real_id = match resolve_pin_id(guild_id, display_id).await {
+        Some(id) => id,
         None => {
-            let _msg = msg
-                .channel_id.say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Invalid ID! Run the `.pins` command to see a list of usable IDs."
+            return inv
+                .fail_now(
+                    "Invalid ID! Run `/pins` to see a list of usable IDs.",
+                    false,
                 )
-                .await;
-            return Ok(());
+                .await
         }
     };
 
-    let new = Pin::new(real_id.as_str(), guild_id, title, url, description);
+    let new = Pin::new(
+        real_id.as_str(),
+        guild_id,
+        inv.string("title").unwrap_or_default(),
+        inv.string("url").unwrap_or_default(),
+        inv.string("description").unwrap_or_default(),
+    );
 
     println!("Sending Pin edit request with {:?}", new);
     let client = reqwest::Client::new();
@@ -230,75 +212,48 @@ async fn edit_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
         .put(format!("http://localhost:8000/api/v1/pin/{}", real_id).as_str())
         .json(&new)
         .send()
-        .await?
-        .json::<HashMap<String, Value>>()
-        .await?;
-
-    let title = resp.get("title").unwrap();
-    let url = resp.get("url").unwrap();
-    let description = resp.get("description").unwrap();
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Edited New Pin")
-                    .image("attachment://cork-board.png")
-                    .field(
-                        format!("{}. ", id),
-                        format!("[{}]({}): {}", title, url, description),
-                        false,
-                    )
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
         .await;
 
-    Ok(())
+    let body = match resp {
+        Ok(r) => match r.json::<HashMap<String, Value>>().await {
+            Ok(b) => b,
+            Err(_) => return inv.fail_now("Could not read the edited pin.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
+
+    inv.reply_with_file(
+        pin_embed(
+            "Edited Pin",
+            vec![record_field(format!("{}. ", display_id), &body)],
+        ),
+        BOARD_IMAGE,
+        false,
+    )
+    .await
 }
 
-#[command]
-#[allowed_roles("corkboard")]
-#[description = "Add a Pin."]
-#[usage = "pin_id"]
-async fn delete_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let arg_names = vec!["Pin_id"];
-    if !validation::has_corkboard_role(ctx, msg).await
-        || !validation::has_correct_arg_count(ctx, msg, 1, args.len(), arg_names, "delete_pin")
-            .await
-    {
+pub async fn slash_delete_pin(inv: &Invocation<'_>) -> serenity::Result<()> {
+    if !validation::has_corkboard_role(inv).await {
         return Ok(());
     }
 
-    let guild_id = i64::from(msg.guild_id.unwrap());
-    args.quoted();
-    let id = args.current().unwrap().to_string();
-    let id_int = match id.parse::<i32>() {
-        Ok(i) => i,
-        _error => {
-            let _msg = msg
-                .channel_id
-                .say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Unable to parse ID.",
-                )
-                .await;
-            return Ok(());
-        }
+    let guild_id = match require_guild(inv).await {
+        Some(g) => i64::from(g),
+        None => return Ok(()),
     };
 
-    let id_map = retrieve_pins_id_map(guild_id).await;
-    let real_id_maybe = id_map.get(&id_int).clone();
-    let real_id = match real_id_maybe {
-        Some(i) => i,
+    let display_id = inv.integer("id").unwrap_or(0) as i32;
+
+    let real_id = match resolve_pin_id(guild_id, display_id).await {
+        Some(id) => id,
         None => {
-            let _msg = msg
-                .channel_id.say(
-                    &ctx.http,
-                    ":bangbang: Error :bangbang: - Invalid ID! Run the `.pin` command to see a list of usable IDs."
+            return inv
+                .fail_now(
+                    "Invalid ID! Run `/pins` to see a list of usable IDs.",
+                    false,
                 )
-                .await;
-            return Ok(());
+                .await
         }
     };
 
@@ -308,54 +263,54 @@ async fn delete_pin(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         .delete(format!("http://localhost:8000/api/v1/pin/delete/{}", real_id).as_str())
         .header(CONTENT_TYPE, "application/json")
         .send()
-        .await?
-        .json::<HashMap<String, Value>>()
-        .await?;
-
-    let title = resp.get("title").unwrap();
-    let url = resp.get("url").unwrap();
-    let description = resp.get("description").unwrap();
-    let _msg = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Edited New Pin")
-                    .image("attachment://cork-board.png")
-                    .field(
-                        "1. ",
-                        format!("[{}]({}): {}", title, url, description),
-                        false,
-                    )
-                    .timestamp(Timestamp::now())
-            })
-            .add_file("./resources/cork-board.png")
-        })
         .await;
 
-    Ok(())
+    let body = match resp {
+        Ok(r) => match r.json::<HashMap<String, Value>>().await {
+            Ok(b) => b,
+            Err(_) => return inv.fail_now("Could not read the deleted pin.", false).await,
+        },
+        Err(_) => return inv.fail_now("Could not reach the server.", false).await,
+    };
+
+    inv.reply_with_file(
+        pin_embed(
+            "Deleted Pin",
+            vec![record_field(format!("{}. ", display_id), &body)],
+        ),
+        BOARD_IMAGE,
+        false,
+    )
+    .await
+}
+
+/// Turns the 1-based number shown by `/pins` into the record's real uuid.
+async fn resolve_pin_id(guild_id: i64, display_id: i32) -> Option<String> {
+    retrieve_pins_id_map(guild_id).await.get(&display_id).cloned()
 }
 
 async fn retrieve_pins_id_map(guild_id: i64) -> HashMap<i32, String> {
-    let resp = reqwest::get(format!(
+    let mut id_map: HashMap<i32, String> = HashMap::new();
+
+    let resp = match reqwest::get(format!(
         "http://localhost:8000/api/v1/pin/guild/{}",
         guild_id
     ))
     .await
-    .unwrap()
-    .json::<Vec<HashMap<String, Value>>>()
-    .await
-    .unwrap();
-    let mut pins: Vec<Pin> = Vec::new();
-    for pin_map in resp {
-        pins.push(Pin::to_pin(pin_map));
+    {
+        Ok(r) => r,
+        Err(_) => return id_map,
+    };
+
+    let list = match resp.json::<Vec<HashMap<String, Value>>>().await {
+        Ok(l) => l,
+        Err(_) => return id_map,
+    };
+
+    for (i, pin_map) in list.into_iter().enumerate() {
+        let pin = Pin::to_pin(pin_map);
+        id_map.insert((i + 1) as i32, pin.id.to_string());
     }
 
-    let mut result: HashMap<i32, String> = HashMap::new();
-    let mut i = 1;
-    for pin in pins {
-        result.insert(i, pin.id.to_string());
-        i += 1;
-    }
-
-    result
+    id_map
 }

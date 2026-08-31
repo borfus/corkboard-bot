@@ -6,7 +6,23 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serenity = { version = "0.11.7", features = ["model", "collector"] }
+# default-features is off purely to drop `framework` / `standard_framework`.
+# Serenity panics on startup if the framework feature is enabled but no
+# framework is registered, and every command is a slash command now, so there is
+# no framework to give it. The list below is serenity's own default set with
+# those two removed.
+serenity = { version = "0.11.7", default-features = false, features = [
+    "builder",
+    "cache",
+    "chrono",
+    "client",
+    "collector",
+    "gateway",
+    "http",
+    "model",
+    "utils",
+    "rustls_backend",
+] }
 tokio = { version = "1.40.0", features = ["full", "macros", "rt-multi-thread"] }
 reqwest = { version = "0.11.27", default-features = false, features = [
     "json",
@@ -16,6 +32,7 @@ reqwest = { version = "0.11.27", default-features = false, features = [
 serde = "1.0.209"
 serde_json = "1.0.127"
 chrono = "0.4.38"
+chrono-tz = "0.9"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 rustemon = "3.5.0"
 image = "0.24.9"

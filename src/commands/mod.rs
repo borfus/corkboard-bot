@@ -1,7 +1,12 @@
+pub mod battle_api;
 pub mod events;
 pub mod faqs;
-pub mod list;
+pub mod help;
+pub mod image_host;
+pub mod luckybattle;
+pub mod luckyboard;
 pub mod luckydex;
 pub mod luckymon;
+pub mod luckyteam;
 pub mod luckytrade;
 pub mod pins;
