@@ -6,10 +6,7 @@ use std::io::copy;
 use std::path::Path;
 
 use chrono::NaiveDate;
-use rustemon::client::RustemonClient;
-use rustemon::model::pokemon::Pokemon;
-use rustemon::pokemon::pokemon;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serenity::builder::CreateEmbed;
 use serenity::futures::StreamExt;
 use serenity::model::Timestamp;
@@ -21,6 +18,38 @@ extern crate reqwest;
 extern crate tokio;
 
 static POKEDEX_MAX_NUM: u64 = 1025;
+static POKEAPI_POKEMON_URL: &str = "https://pokeapi.co/api/v2/pokemon";
+
+// Only the fields luckymon reads. rustemon models the whole response strictly,
+// so every time PokeAPI adds or drops a sprite version deep in `sprites.versions`
+// deserialization fails for the entire pokemon. Serde ignores everything not
+// listed here.
+#[derive(Deserialize, Debug)]
+struct Pokemon {
+    species: NamedResource,
+    sprites: Sprites,
+}
+
+#[derive(Deserialize, Debug)]
+struct NamedResource {
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct Sprites {
+    front_default: Option<String>,
+    front_shiny: Option<String>,
+}
+
+async fn fetch_pokemon(client: &reqwest::Client, id: i64) -> reqwest::Result<Pokemon> {
+    client
+        .get(format!("{}/{}", POKEAPI_POKEMON_URL, id))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Pokemon>()
+        .await
+}
 
 #[derive(Serialize, Debug)]
 pub struct NewLuckymonHistory {
@@ -198,10 +227,11 @@ pub async fn slash_luckymon(inv: &Invocation<'_>) -> serenity::Result<()> {
         daily_pair.0, daily_pair.1, today
     );
 
-    let rustemon_client = RustemonClient::default();
-    let lucky_pokemon: Pokemon = match pokemon::get_by_id(daily_pair.0, &rustemon_client).await {
+    let client = reqwest::Client::new();
+    let lucky_pokemon = match fetch_pokemon(&client, daily_pair.0).await {
         Ok(p) => p,
-        Err(_) => {
+        Err(e) => {
+            println!("PokeAPI lookup for {} failed: {:?}", daily_pair.0, e);
             return inv
                 .fail("Could not reach PokeAPI. Try again in a moment.")
                 .await
@@ -249,7 +279,6 @@ pub async fn slash_luckymon(inv: &Invocation<'_>) -> serenity::Result<()> {
         "Sending new LuckymonHistory creation request with {:?}",
         new
     );
-    let client = reqwest::Client::new();
     let posted = client
         .post("http://localhost:8000/api/v1/luckymon-history")
         .json(&new)
@@ -300,13 +329,11 @@ pub async fn initialize() {
 pub async fn download_sprites() {
     let path = "./resources/sprites";
     let _ = fs::create_dir_all(path);
-    let rustemon_client = RustemonClient::default();
+    let client = reqwest::Client::new();
 
     println!("Downloading sprites...");
     for i in 1..=POKEDEX_MAX_NUM {
-        let pokemon: Pokemon = pokemon::get_by_id(i.try_into().unwrap(), &rustemon_client)
-            .await
-            .unwrap();
+        let pokemon = fetch_pokemon(&client, i.try_into().unwrap()).await.unwrap();
 
         download_individual_sprite(
             pokemon.sprites.front_default.unwrap(),
